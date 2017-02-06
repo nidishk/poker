@@ -34,7 +34,7 @@ https://spwna9usel.execute-api.eu-west-1.amazonaws.com/v0/confirm
 ### Get Account
 
 ```
-curl -X GET/POST -H "Content-Type: application/json" -d
+curl -X POST -H "Content-Type: application/json" -d
 '{
   "email": "test@mail.com"
 }'
