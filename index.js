@@ -17,7 +17,7 @@ exports.handler = function(event, context, callback) {
     manager = new AccountManager(new Db(simpledb), new Email(ses));
   if (path.indexOf('confirm') > -1) {
     handleRequest = manager.confirmEmail(event.token);
-  if (path.indexOf('query') > -1) {
+  } else if (path.indexOf('query') > -1) {
     handleRequest = manager.queryAccount(event.email);
   } else if (path.indexOf('account') > -1) {
     if (event.context['http-method'] === 'GET') {

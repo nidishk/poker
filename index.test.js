@@ -102,7 +102,7 @@ describe('Account Manager', function() {
           { Name: "pendingTime", Replace: true, Value: sinon.match.any },
           { Name: "pendingEmail", Replace: true, Value: TEST_MAIL },
         ],
-        DomainName: "accounts",
+        DomainName: "ab-accounts",
         ItemName: ACCOUNT_ID
       });
       expect(ses.sendEmail).calledWith(sinon.match({
@@ -131,16 +131,16 @@ describe('Account Manager', function() {
 
     manager.confirmEmail(token).then(function(rv) {
       expect(sdb.select).calledWith({
-        SelectExpression: 'select * from `accounts` where pendingToken =  "' + token + '" limit 1'
+        SelectExpression: 'select * from `ab-accounts` where pendingToken =  "' + token + '" limit 1'
       });
       expect(sdb.putAttributes).calledWith({
         Attributes: [ { Name: 'email', Replace: true, Value: TEST_MAIL }],
-        DomainName: 'accounts',
+        DomainName: 'ab-accounts',
         ItemName: ACCOUNT_ID
       });
       expect(sdb.deleteAttributes).calledWith({
         Attributes: [ { Name: 'pendingEmail' }, { Name: 'pendingToken' }, { Name: 'pendingTime' }],
-        DomainName: 'accounts',
+        DomainName: 'ab-accounts',
         ItemName: ACCOUNT_ID
       });
       expect(rv).to.eql({ accountId: ACCOUNT_ID });
