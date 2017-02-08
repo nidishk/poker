@@ -13,11 +13,11 @@ exports.handler = function(event, context, callback) {
   console.log('Request received:\n', JSON.stringify(event));
   console.log('Context received:\n', JSON.stringify(context));
 
-  const recapSecret = event['stage-variables'].recaptchaSecret,
-    path = event.context['resource-path'];
+  const recapSecret = event['stage-variables'].recaptchaSecret;
+  const path = event.context['resource-path'];
 
-  var handleRequest,
-    manager = new AccountManager(new Db(simpledb), new Email(ses), new Recaptcha(recapSecret)),
+  var handleRequest;
+  var manager = new AccountManager(new Db(simpledb), new Email(ses), new Recaptcha(recapSecret));
   if (path.indexOf('confirm') > -1) {
     handleRequest = manager.confirmEmail(event.token);
   } else if (path.indexOf('query') > -1) {
