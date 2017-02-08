@@ -13,6 +13,10 @@ var sdb = {
   select: function(){}
 };
 
+var recaptcha = {
+  verify: function(){}
+}
+
 const ACCOUNT_ID = '357e44ed-bd9a-4370-b6ca-8de9847d1da8';
 const TEST_MAIL = 'test@mail.com';
 
@@ -41,12 +45,26 @@ describe('Account Manager', function() {
 
     sinon.stub(sdb, 'getAttributes').yields(null, {Attributes: []});
     sinon.stub(sdb, 'select').yields(null, {});
+    sinon.stub(recaptcha, 'verify').returns(Promise.resolve());
 
-    var manager = new AccountManager(new Db(sdb));
+    var manager = new AccountManager(new Db(sdb), null, recaptcha);
 
     manager.addAccount(ACCOUNT_ID, TEST_MAIL, {}).catch(function(err) {
       expect(err).to.contain('Conflict: ');
       expect(err).to.contain(ACCOUNT_ID);
+      done();
+    }).catch(done);
+  });
+
+  it('should fail on captcha error.', function(done) {
+    sinon.stub(sdb, 'getAttributes').yields(null, {Attributes: []});
+    sinon.stub(sdb, 'select').yields(null, {});
+    sinon.stub(recaptcha, 'verify').returns(Promise.reject('Bad Request: wrong'));
+
+    var manager = new AccountManager(new Db(sdb), null, recaptcha);
+
+    manager.addAccount(ACCOUNT_ID, TEST_MAIL, {}).catch(function(err) {
+      expect(err).to.contain('Bad Request: ');
       done();
     }).catch(done);
   });
@@ -57,8 +75,9 @@ describe('Account Manager', function() {
     sinon.stub(sdb, 'select').yields(null, {Items: [ { Name: '123', Attributes: [
       { Name: 'Email', Value: TEST_MAIL },
     ]}]});
+    sinon.stub(recaptcha, 'verify').returns(Promise.resolve());
 
-    var manager = new AccountManager(new Db(sdb));
+    var manager = new AccountManager(new Db(sdb), null, recaptcha);
 
     manager.addAccount(ACCOUNT_ID, TEST_MAIL, {}).catch(function(err) {
       expect(err).to.contain('Conflict: ');
@@ -73,8 +92,9 @@ describe('Account Manager', function() {
     sinon.stub(sdb, 'select').yields(null, {Items: [ { Name: '123', Attributes: [
       { Name: 'pendingEmail', Value: TEST_MAIL },
     ]}]});
+    sinon.stub(recaptcha, 'verify').returns(Promise.resolve());
 
-    var manager = new AccountManager(new Db(sdb));
+    var manager = new AccountManager(new Db(sdb), null, recaptcha);
 
     manager.addAccount(ACCOUNT_ID, TEST_MAIL, {}).catch(function(err) {
       expect(err).to.contain('Conflict: ');
@@ -88,11 +108,12 @@ describe('Account Manager', function() {
     sinon.stub(sdb, 'getAttributes').yields(null, {});
     sinon.stub(sdb, 'select').yields(null, {});
     sinon.stub(sdb, 'putAttributes').yields(null, {ResponseMetadata: {}});
+    sinon.stub(recaptcha, 'verify').returns(Promise.resolve());
 
     var ses = { sendEmail: function(){} };
     sinon.stub(ses, 'sendEmail').yields(null, {});
 
-    var manager = new AccountManager(new Db(sdb), new Email(ses));
+    var manager = new AccountManager(new Db(sdb), new Email(ses), recaptcha);
     
     manager.addAccount(ACCOUNT_ID, TEST_MAIL, {}).then(function(rv) {
       expect(sdb.putAttributes).calledWith({
@@ -198,6 +219,7 @@ describe('Account Manager', function() {
     if (sdb.putAttributes.restore) sdb.putAttributes.restore();
     if (sdb.deleteAttributes.restore) sdb.deleteAttributes.restore();
     if (sdb.select.restore) sdb.select.restore();
+    if (recaptcha.verify.restore) recaptcha.verify.restore(); 
   });
 
 });
