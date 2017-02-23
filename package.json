@@ -18,6 +18,9 @@
   "dependencies": {
     "aws-sdk": "^2.3.14",
     "babel-runtime": "^6.11.6",
+    "eth-lightwallet": "^2.5.1",
+    "web3-provider-engine": "^8.0.4",
+    "ethereumjs-util": "^4.5.0",
     "httpinvoke": "^1.4.0",
     "node-uuid": "^1.4.7",
     "querystring": "^0.2.0"

@@ -3,10 +3,13 @@ const Db = require('./lib/db');
 const Email = require('./lib/email');
 const Recaptcha = require('./lib/recaptcha');
 const AccountManager = require('./lib/index');
+const Provider = require('./lib/provider');
+const Contract = require('./lib/blockchain');
 AWS.config.update({region: 'eu-west-1'});
 
 const simpledb = new AWS.SimpleDB();
 const ses = new AWS.SES();
+var provider;
 
 exports.handler = function(event, context, callback) {
 
@@ -15,9 +18,15 @@ exports.handler = function(event, context, callback) {
 
   const recapSecret = event['stage-variables'].recaptchaSecret;
   const path = event.context['resource-path'];
+  const recKey = event['stage-variables'].recKey;
+  if (!provider) {
+    provider = new Provider(event['stage-variables'].providerUrl, recKey);
+  }
+  const factoryAddress = event['stage-variables'].factoryAddress;
 
   var handleRequest;
-  var manager = new AccountManager(new Db(simpledb), new Email(ses), new Recaptcha(recapSecret));
+  var manager = new AccountManager(new Db(simpledb), new Email(ses), new Recaptcha(recapSecret), new Contract(provider, factoryAddress));
+
   if (path.indexOf('confirm') > -1) {
     handleRequest = manager.confirmEmail(event.token);
   } else if (path.indexOf('query') > -1) {

@@ -1,7 +1,7 @@
 var expect = require('chai').expect;
 var sinon = require('sinon');
 require('chai').use(require('sinon-chai'));
-
+const Contract = require('./lib/blockchain');
 const AccountManager = require('./lib/index');
 const Db = require('./lib/db');
 const Email = require('./lib/email');
@@ -13,6 +13,17 @@ var sdb = {
   select: function(){}
 };
 
+var contract = {
+  create: {
+    sendTransaction: function(){}, 
+  },
+}
+
+var provider = {
+  getFactory: function(){},
+  getAddress: function(){},
+}
+
 var recaptcha = {
   verify: function(){}
 }
@@ -22,6 +33,12 @@ const TEST_MAIL = 'test@mail.com';
 
 
 describe('Account Manager', function() {
+
+  beforeEach(function () {
+    sinon.stub(provider, 'getFactory').returns(contract);
+  });
+
+
 
   it('should fail adding account on invalid uuid.', function(done) {
     var manager = new AccountManager(new Db({}));
@@ -119,6 +136,7 @@ describe('Account Manager', function() {
       expect(sdb.putAttributes).calledWith({
         Attributes: [
           { Name: "created", Replace: true, Value: sinon.match.any },
+          { Name: "wallet", Replace: true, Value: {  } },
           { Name: "pendingToken", Replace: true, Value: sinon.match.any },
           { Name: "pendingTime", Replace: true, Value: sinon.match.any },
           { Name: "pendingEmail", Replace: true, Value: TEST_MAIL },
@@ -140,6 +158,7 @@ describe('Account Manager', function() {
   it('should allow to confirm email.', function(done) {
     var token = '65e95013-ac29-4ee9-a1fa-5e712e0178a5';
 
+    sinon.stub(contract.create, 'sendTransaction').yields(null, '0x1234');
     sinon.stub(sdb, 'select').yields(null, {Items: [ { Name: ACCOUNT_ID, Attributes: [
       { Name: 'pendingToken', Value: token },
       { Name: 'pendingEmail', Value: TEST_MAIL },
@@ -148,7 +167,7 @@ describe('Account Manager', function() {
     sinon.stub(sdb, 'putAttributes').yields(null, {ResponseMetadata: {}});
     sinon.stub(sdb, 'deleteAttributes').yields(null, {ResponseMetadata: {}});
 
-    var manager = new AccountManager(new Db(sdb));
+    var manager = new AccountManager(new Db(sdb), null, null, new Contract(provider));
 
     manager.confirmEmail(token).then(function(rv) {
       expect(sdb.select).calledWith({
@@ -164,7 +183,7 @@ describe('Account Manager', function() {
         DomainName: 'ab-accounts',
         ItemName: ACCOUNT_ID
       });
-      expect(rv).to.eql({ accountId: ACCOUNT_ID });
+      expect(rv).to.eql({ accountId: ACCOUNT_ID, txHash: '0x1234' });
       done()
     }).catch(done);
   });
@@ -220,6 +239,7 @@ describe('Account Manager', function() {
     if (sdb.deleteAttributes.restore) sdb.deleteAttributes.restore();
     if (sdb.select.restore) sdb.select.restore();
     if (recaptcha.verify.restore) recaptcha.verify.restore(); 
+    if (contract.create.sendTransaction.restore) contract.create.sendTransaction.restore();
+    if (provider.getFactory.restore) provider.getFactory.restore();
   });
-
 });
