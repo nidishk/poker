@@ -38,8 +38,6 @@ describe('Account Manager', function() {
     sinon.stub(provider, 'getFactory').returns(contract);
   });
 
-
-
   it('should fail adding account on invalid uuid.', function(done) {
     var manager = new AccountManager(new Db({}));
 
@@ -161,6 +159,7 @@ describe('Account Manager', function() {
     sinon.stub(contract.create, 'sendTransaction').yields(null, '0x1234');
     sinon.stub(sdb, 'select').yields(null, {Items: [ { Name: ACCOUNT_ID, Attributes: [
       { Name: 'pendingToken', Value: token },
+      { Name: 'wallet', Value: '{}' },
       { Name: 'pendingEmail', Value: TEST_MAIL },
       { Name: 'pendingTime', Value: new Date().toString()},
     ]}]});
