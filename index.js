@@ -31,6 +31,7 @@ exports.handler = function(event, context, callback) {
         event.email,
         event.wallet,
         event.recapResponse,
+        event.origin,
         event.context['source-ip']
       );
     }
