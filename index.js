@@ -1,51 +1,68 @@
-const AWS = require('aws-sdk');
-const Db = require('./lib/db');
-const Email = require('./lib/email');
-const Recaptcha = require('./lib/recaptcha');
-const AccountManager = require('./lib/index');
+import AWS from 'aws-sdk';
+import Raven from 'raven';
+import Db from './src/db';
+import Email from './src/email';
+import Recaptcha from './src/recaptcha';
+import AccountManager from './src/index';
 
 const simpledb = new AWS.SimpleDB();
 const ses = new AWS.SES();
 
-exports.handler = function(event, context, callback) {
+const handleError = function handleError(err, callback) {
+  Raven.captureException(err, { server_name: 'account_service' }, (sendErr) => {
+    if (sendErr) {
+      console.log(JSON.stringify(sendErr)); // eslint-disable-line no-console
+      callback(sendErr);
+      return;
+    }
+    // this shall map to http 500
+    callback(`Error: ${err.message}`);
+  });
+};
 
-  console.log('Request received:\n', JSON.stringify(event));
-  console.log('Context received:\n', JSON.stringify(context));
+exports.handler = function handler(event, context, callback) {
+  Raven.config(process.env.SENTRY_URL, {
+    captureUnhandledRejections: true,
+  }).install(() => {
+    callback(null, 'This is thy sheath; there rust, and let me die.');
+  });
 
   const recapSecret = event['stage-variables'].recaptchaSecret;
   const path = event.context['resource-path'];
 
-  var handleRequest;
-  var manager = new AccountManager(new Db(simpledb), new Email(ses), new Recaptcha(recapSecret), new AWS.SNS(), event['stage-variables'].topicArn);
+  let handleRequest;
+  const manager = new AccountManager(new Db(simpledb), new Email(ses), new Recaptcha(recapSecret), new AWS.SNS(), event['stage-variables'].topicArn);
 
-  if (path.indexOf('confirm') > -1) {
-    handleRequest = manager.confirmEmail(event.token);
-  } else if (path.indexOf('query') > -1) {
-    handleRequest = manager.queryAccount(event.email);
-  } else if (path.indexOf('account') > -1) {
-    if (event.context['http-method'] === 'GET') {
-      handleRequest = manager.getAccount(event.params.path.accountId);
+  try {
+    if (path.indexOf('confirm') > -1) {
+      handleRequest = manager.confirmEmail(event.token);
+    } else if (path.indexOf('query') > -1) {
+      handleRequest = manager.queryAccount(event.email);
+    } else if (path.indexOf('account') > -1) {
+      if (event.context['http-method'] === 'GET') {
+        handleRequest = manager.getAccount(event.params.path.accountId);
+      } else {
+        handleRequest = manager.addAccount(
+          event.params.path.accountId,
+          event.email,
+          event.wallet,
+          event.recapResponse,
+          event.origin,
+          event.context['source-ip'],
+        );
+      }
     } else {
-      handleRequest = manager.addAccount(
-        event.params.path.accountId,
-        event.email,
-        event.wallet,
-        event.recapResponse,
-        event.origin,
-        event.context['source-ip']
-      );
+      handleRequest = Promise.reject(`Not Found: unexpected path: ${path}`);
     }
-  } else {
-    handleRequest = Promise.reject('Not Found: unexpected path: ' + path);
+  } catch (err) {
+    handleError(err, callback);
+    return;
   }
 
-  handleRequest
-  .then(function(data){
+  handleRequest.then((data) => {
     callback(null, data);
-  })
-  .catch(function(err){
-    console.log(err.stack);
-    callback(err);
+  }).catch((err) => {
+    handleError(err, callback);
   });
-}
+};
 
