@@ -80,24 +80,6 @@ Db.prototype.checkAccountConflict = function checkAccountConflict(accountId, ema
   return Promise.all([idCheck, mailCheck]);
 };
 
-Db.prototype.getAccountByToken = function getAccountByToken(token) {
-  return new Promise((fulfill, reject) => {
-    this.sdb.select({
-      SelectExpression: `select * from \`${this.domain}\` where pendingToken =  "${token}" limit 1`,
-    }, (err, data) => {
-      if (err) {
-        return reject(`Error: ${err}`);
-      }
-      if (!data.Items || data.Items.length === 0) {
-        return reject(new NotFound(`token ${token} unknown.`));
-      }
-      const rv = transform(data.Items[0].Attributes);
-      rv.id = data.Items[0].Name;
-      fulfill(rv);
-    });
-  });
-};
-
 Db.prototype.getAccountByEmail = function getAccountByEmail(email) {
   return new Promise((fulfill, reject) => {
     this.sdb.select({
@@ -131,6 +113,21 @@ Db.prototype.putAccount = function putAccount(accountId, attributes) {
   });
 };
 
+Db.prototype.setWallet = function setWallet(accountId, wallet) {
+  return new Promise((fulfill, reject) => {
+    this.sdb.putAttributes({
+      DomainName: this.domain,
+      ItemName: accountId,
+      Attributes: transform({ wallet: [wallet] }),
+    }, (err, data) => {
+      if (err) {
+        return reject(`Error: ${err}`);
+      }
+      fulfill(data);
+    });
+  });
+};
+
 Db.prototype.updateEmailComplete = function updateEmailComplete(accountId, email) {
   const put = new Promise((fulfill, reject) => {
     this.sdb.putAttributes({
@@ -150,8 +147,6 @@ Db.prototype.updateEmailComplete = function updateEmailComplete(accountId, email
       ItemName: accountId,
       Attributes: [
         { Name: 'pendingEmail' },
-        { Name: 'pendingToken' },
-        { Name: 'pendingTime' },
       ],
     }, (err, data) => {
       if (err) {

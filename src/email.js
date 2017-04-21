@@ -1,23 +1,21 @@
+const fromEmail = 'noreply@acebusters.com';
+const subject = 'Acebusters Email Verification Request';
+const resetSubject = 'Acebusters Password Recovery Request';
+const welcome = 'Dear customer, \n\nWe have received a request to authorize this email address for Acebusters.com. If you requested this verification, please click the following link:';
+const reset = 'Dear customer, \n\nWe have received a request to reset the password linked to this email for Acebusters.com. If you requested this reset, please click the following link:';
+const goodbye = 'Sincerely, \n\nThe Acebusters Team';
 
-function Email(ses) {
-  this.ses = ses;
-  this.from = 'noreply@acebusters.com';
-  this.subject = 'Acebusters Email Verification Request';
-  this.welcome = 'Dear customer, \n\nWe have received a request to authorize this email address for Acebusters.com. If you requested this verification, please click the following link: \n\n';
-  this.goodbye = '\n\nSincerely, \n\nThe Acebusters Team';
-}
-
-Email.prototype.sendVerification = function sendVerification(email, fulfillment, origin) {
+function sendVerification(ses, email, subject, msg) {
   return new Promise((fulfill, reject) => {
-    this.ses.sendEmail({
-      Source: this.from,
+    ses.sendEmail({
+      Source: fromEmail,
       Destination: { ToAddresses: [email] },
       Message: {
         Subject: {
-          Data: this.subject,
+          Data: subject,
         },
         Body: { Text: {
-          Data: `${this.welcome + origin}/confirm/${fulfillment}${this.goodbye}`,
+          Data: msg,
         } } },
     }, (err, data) => {
       if (err) {
@@ -26,6 +24,20 @@ Email.prototype.sendVerification = function sendVerification(email, fulfillment,
       return fulfill(data);
     });
   });
+}
+
+function Email(ses) {
+  this.ses = ses;
+}
+
+Email.prototype.sendConfirm = function sendConfirm(email, fulfillment, origin) {
+  const msg = `${welcome} \n\n${origin}/confirm/${fulfillment} \n\n${goodbye}`;
+  return sendVerification(this.ses, email, subject, msg);
+};
+
+Email.prototype.sendReset = function sendReset(email, fulfillment, origin) {
+  const msg = `${reset} \n\n${origin}/confirm/${fulfillment} \n\n${goodbye}`;
+  return sendVerification(this.ses, email, resetSubject, msg);
 };
 
 module.exports = Email;

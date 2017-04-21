@@ -2,10 +2,12 @@ import chai, { expect } from 'chai';
 import sinonChai from 'sinon-chai';
 import sinon from 'sinon';
 import { it, describe, afterEach } from 'mocha';
+import { Receipt } from 'poker-helper';
 import Db from './src/db';
 import Email from './src/email';
 import AccountManager from './src/index';
 import { BadRequest } from './src/errors';
+
 
 chai.use(sinonChai);
 
@@ -24,11 +26,17 @@ const recaptcha = {
   verify() {},
 };
 
+const ses = {
+  sendEmail() {},
+};
+
 const ACCOUNT_ID = '357e44ed-bd9a-4370-b6ca-8de9847d1da8';
 const TEST_MAIL = 'test@mail.com';
+const SESS_ADDR = '0x82e8c6cf42c8d1ff9594b17a3f50e94a12cc860f';
+const SESS_PRIV = '0x94890218f2b0d04296f30aeafd13655eba4c5bbf1770273276fee52cbe3f2cb4';
 
 
-describe('Account Manager', () => {
+describe('Account Manager - add account ', () => {
   it('should fail adding account on invalid uuid.', () => {
     const manager = new AccountManager(new Db({}));
     try {
@@ -56,7 +64,7 @@ describe('Account Manager', () => {
     sinon.stub(sdb, 'select').yields(null, {});
     sinon.stub(recaptcha, 'verify').returns(Promise.resolve());
 
-    const manager = new AccountManager(new Db(sdb), null, recaptcha);
+    const manager = new AccountManager(new Db(sdb), null, recaptcha, null, null, SESS_PRIV);
 
     manager.addAccount(ACCOUNT_ID, TEST_MAIL, {}).catch((err) => {
       expect(err.message).to.contain('Conflict: ');
@@ -69,7 +77,7 @@ describe('Account Manager', () => {
     sinon.stub(sdb, 'getAttributes').yields(null, { Attributes: [] });
     sinon.stub(sdb, 'select').yields(null, {});
     sinon.stub(recaptcha, 'verify').returns(Promise.reject(new BadRequest('wrong')));
-    const manager = new AccountManager(new Db(sdb), null, recaptcha);
+    const manager = new AccountManager(new Db(sdb), null, recaptcha, null, null, SESS_PRIV);
 
     manager.addAccount(ACCOUNT_ID, TEST_MAIL, {}).catch((err) => {
       expect(err.message).to.contain('Bad Request: ');
@@ -85,7 +93,7 @@ describe('Account Manager', () => {
       ] }] });
     sinon.stub(recaptcha, 'verify').returns(Promise.resolve());
 
-    const manager = new AccountManager(new Db(sdb), null, recaptcha);
+    const manager = new AccountManager(new Db(sdb), null, recaptcha, null, null, SESS_PRIV);
 
     manager.addAccount(ACCOUNT_ID, TEST_MAIL, {}).catch((err) => {
       expect(err.message).to.contain('Conflict: ');
@@ -102,7 +110,7 @@ describe('Account Manager', () => {
       ] }] });
     sinon.stub(recaptcha, 'verify').returns(Promise.resolve());
 
-    const manager = new AccountManager(new Db(sdb), null, recaptcha);
+    const manager = new AccountManager(new Db(sdb), null, recaptcha, null, null, SESS_PRIV);
 
     manager.addAccount(ACCOUNT_ID, TEST_MAIL, {}).catch((err) => {
       expect(err.message).to.contain('Conflict: ');
@@ -116,19 +124,13 @@ describe('Account Manager', () => {
     sinon.stub(sdb, 'select').yields(null, {});
     sinon.stub(sdb, 'putAttributes').yields(null, { ResponseMetadata: {} });
     sinon.stub(recaptcha, 'verify').returns(Promise.resolve());
-
-    const ses = { sendEmail() {} };
     sinon.stub(ses, 'sendEmail').yields(null, {});
-
-    const manager = new AccountManager(new Db(sdb), new Email(ses), recaptcha);
+    const manager = new AccountManager(new Db(sdb), new Email(ses), recaptcha, null, null, SESS_PRIV);
 
     manager.addAccount(ACCOUNT_ID, TEST_MAIL, {}).then(() => {
       expect(sdb.putAttributes).calledWith({
         Attributes: [
           { Name: 'created', Replace: true, Value: sinon.match.any },
-          { Name: 'wallet', Replace: true, Value: { } },
-          { Name: 'pendingToken', Replace: true, Value: sinon.match.any },
-          { Name: 'pendingTime', Replace: true, Value: sinon.match.any },
           { Name: 'pendingEmail', Replace: true, Value: TEST_MAIL },
         ],
         DomainName: 'ab-accounts',
@@ -143,90 +145,197 @@ describe('Account Manager', () => {
     }).catch(done);
   });
 
+  afterEach(() => {
+    if (sdb.getAttributes.restore) sdb.getAttributes.restore();
+    if (sdb.putAttributes.restore) sdb.putAttributes.restore();
+    if (sdb.deleteAttributes.restore) sdb.deleteAttributes.restore();
+    if (sdb.select.restore) sdb.select.restore();
+    if (recaptcha.verify.restore) recaptcha.verify.restore();
+    if (sns.publish.restore) sns.publish.restore();
+    if (ses.sendEmail.restore) ses.sendEmail.restore();
+  });
 
-  it('should allow to confirm email.', (done) => {
-    const token = '65e95013-ac29-4ee9-a1fa-5e712e0178a5';
+});
 
-    sinon.stub(sns, 'publish').yields(null, {});
+describe('Account Manager - reset request ', () => {
+  it('should allow to request wallet reset.', (done) => {
     sinon.stub(sdb, 'select').yields(null, { Items: [{ Name: ACCOUNT_ID,
       Attributes: [
-      { Name: 'pendingToken', Value: token },
-      { Name: 'wallet', Value: '{"address": "0x1234"}' },
-      { Name: 'pendingEmail', Value: TEST_MAIL },
-      { Name: 'pendingTime', Value: new Date().toString() },
-      ] }] });
+      { Name: 'email', Value: TEST_MAIL },
+      { Name: 'wallet', Value: "{}" },
+    ] }] });
+    sinon.stub(recaptcha, 'verify').returns(Promise.resolve());
+    sinon.stub(ses, 'sendEmail').yields(null, {});
+    const manager = new AccountManager(new Db(sdb), new Email(ses), recaptcha, null, null, SESS_PRIV);
+
+    manager.resetRequest(TEST_MAIL, {}).then(() => {
+      expect(ses.sendEmail).calledWith(sinon.match({
+        Destination: { ToAddresses: [TEST_MAIL] },
+        Message: { Subject: { Data: 'Acebusters Password Recovery Request' } },
+        Source: 'noreply@acebusters.com',
+      }));
+      done();
+    }).catch(done);
+  });
+
+  afterEach(() => {
+    if (sdb.getAttributes.restore) sdb.getAttributes.restore();
+    if (sdb.putAttributes.restore) sdb.putAttributes.restore();
+    if (sdb.deleteAttributes.restore) sdb.deleteAttributes.restore();
+    if (sdb.select.restore) sdb.select.restore();
+    if (recaptcha.verify.restore) recaptcha.verify.restore();
+    if (sns.publish.restore) sns.publish.restore();
+    if (ses.sendEmail.restore) ses.sendEmail.restore();
+  });
+});  
+
+describe('Account Manager - set Wallet ', () => {
+  it('should allow to set Wallet.', (done) => {
+    sinon.stub(sns, 'publish').yields(null, {});
+    sinon.stub(sdb, 'getAttributes').yields(null, { Attributes: [] });
+    sinon.stub(sdb, 'putAttributes').yields(null, { ResponseMetadata: {} });
+    const manager = new AccountManager(new Db(sdb), null, null, sns, 'topicArn', SESS_PRIV);
+
+    const receipt = new Receipt().createConf(ACCOUNT_ID).sign(SESS_PRIV);
+    const wallet = `{ "address": "${SESS_ADDR}" }`;
+    manager.setWallet(receipt, wallet).then(() => {
+      expect(sdb.getAttributes).calledWith({ DomainName: 'ab-accounts', ItemName: ACCOUNT_ID });
+      expect(sdb.putAttributes).calledWith({
+        Attributes: [{ Name: 'wallet', Replace: true, Value: wallet }],
+        DomainName: 'ab-accounts',
+        ItemName: ACCOUNT_ID,
+      });
+      expect(sns.publish).callCount(1);
+      expect(sns.publish).calledWith({
+        Message: `{"accountId":"${ACCOUNT_ID}","signerAddr":"${SESS_ADDR}"}`,
+        Subject: `WalletCreated::${SESS_ADDR}`,
+        TopicArn: 'topicArn',
+      });
+      done();
+    }).catch(done);
+  });
+
+  afterEach(() => {
+    if (sdb.getAttributes.restore) sdb.getAttributes.restore();
+    if (sdb.putAttributes.restore) sdb.putAttributes.restore();
+    if (sdb.deleteAttributes.restore) sdb.deleteAttributes.restore();
+    if (sdb.select.restore) sdb.select.restore();
+    if (recaptcha.verify.restore) recaptcha.verify.restore();
+    if (sns.publish.restore) sns.publish.restore();
+    if (ses.sendEmail.restore) ses.sendEmail.restore();
+  });
+});
+
+describe('Account Manager - reset Wallet ', () => {
+  it('should prevent reset with create session.', () => {
+    const manager = new AccountManager(null, null, null, null, null, SESS_PRIV);
+
+    const receipt = new Receipt().createConf(ACCOUNT_ID).sign(SESS_PRIV);
+    try {
+      manager.resetWallet(receipt, {});
+    } catch(err) {
+      expect(err.message).to.contain('Forbidden: Wallet operation forbidden with session type');
+    };
+  });
+
+  it('should allow to reset Wallet.', (done) => {
+    sinon.stub(sns, 'publish').yields(null, {});
+    sinon.stub(sdb, 'getAttributes').yields(null, {Attributes: [
+      { Name: 'wallet', Value: '{}'},
+    ]});
+    sinon.stub(sdb, 'putAttributes').yields(null, { ResponseMetadata: {} });
+    const manager = new AccountManager(new Db(sdb), null, null, sns, 'topicArn', SESS_PRIV);
+
+    const receipt = new Receipt().resetConf(ACCOUNT_ID).sign(SESS_PRIV);
+    const wallet = `{ "address": "${SESS_ADDR}" }`;
+    manager.resetWallet(receipt, wallet).then(() => {
+      expect(sdb.getAttributes).calledWith({ DomainName: 'ab-accounts', ItemName: ACCOUNT_ID });
+      expect(sdb.putAttributes).calledWith({
+        Attributes: [{ Name: 'wallet', Replace: true, Value: wallet }],
+        DomainName: 'ab-accounts',
+        ItemName: ACCOUNT_ID,
+      });
+      expect(sns.publish).callCount(1);
+      expect(sns.publish).calledWith({
+        Message: `{"accountId":"${ACCOUNT_ID}","signerAddr":"${SESS_ADDR}"}`,
+        Subject: `WalletReset::${SESS_ADDR}`,
+        TopicArn: 'topicArn',
+      });
+      done();
+    }).catch(done);
+  });
+
+  afterEach(() => {
+    if (sdb.getAttributes.restore) sdb.getAttributes.restore();
+    if (sdb.putAttributes.restore) sdb.putAttributes.restore();
+    if (sdb.deleteAttributes.restore) sdb.deleteAttributes.restore();
+    if (sdb.select.restore) sdb.select.restore();
+    if (recaptcha.verify.restore) recaptcha.verify.restore();
+    if (sns.publish.restore) sns.publish.restore();
+    if (ses.sendEmail.restore) ses.sendEmail.restore();
+  });
+});
+
+describe('Account Manager - congfirm email ', () => {
+  it('should allow to confirm email.', (done) => {
+    sinon.stub(sdb, 'getAttributes').yields(null, {Attributes: [
+      { Name: 'pendingEmail', Value: TEST_MAIL},
+    ]});
     sinon.stub(sdb, 'putAttributes').yields(null, { ResponseMetadata: {} });
     sinon.stub(sdb, 'deleteAttributes').yields(null, { ResponseMetadata: {} });
+    const manager = new AccountManager(new Db(sdb), null, null, sns, 'topicArn', SESS_PRIV);
 
-    const manager = new AccountManager(new Db(sdb), null, null, sns, 'topicArn');
-
-    manager.confirmEmail(token).then((rv) => {
-      expect(sdb.select).calledWith({
-        SelectExpression: `select * from \`ab-accounts\` where pendingToken =  "${token}" limit 1`,
-      });
+    const receipt = new Receipt().createConf(ACCOUNT_ID).sign(SESS_PRIV);
+    manager.confirmEmail(receipt).then(() => {
+      expect(sdb.getAttributes).calledWith({ DomainName: "ab-accounts", ItemName: ACCOUNT_ID });
       expect(sdb.putAttributes).calledWith({
         Attributes: [{ Name: 'email', Replace: true, Value: TEST_MAIL }],
         DomainName: 'ab-accounts',
         ItemName: ACCOUNT_ID,
       });
       expect(sdb.deleteAttributes).calledWith({
-        Attributes: [{ Name: 'pendingEmail' }, { Name: 'pendingToken' }, { Name: 'pendingTime' }],
+        Attributes: [{ Name: 'pendingEmail' }],
         DomainName: 'ab-accounts',
         ItemName: ACCOUNT_ID,
       });
-      expect(sns.publish).callCount(1);
-      expect(sns.publish).calledWith({
-        Message: '{"accountId":"357e44ed-bd9a-4370-b6ca-8de9847d1da8","signerAddr":"0x1234"}',
-        Subject: 'EmailConfirmed::0x1234',
-        TopicArn: 'topicArn',
-      });
-      expect(rv).to.eql({ accountId: ACCOUNT_ID });
       done();
     }).catch(done);
   });
 
-  it('should prevent confirming old email token.', (done) => {
-    const token = '65e95013-ac29-4ee9-a1fa-5e712e0178a5';
-    const created = new Date();
-    created.setHours(created.getHours() - 3);
+  it('should prevent confirming old email token.', () => {
+    const before3Hours = (Date.now() / 1000) - (60 * 60 * 3);
+    const manager = new AccountManager(null, null, null, null, null, SESS_PRIV);
 
-    sinon.stub(sdb, 'select').yields(null, { Items: [{ Name: ACCOUNT_ID,
-      Attributes: [
-      { Name: 'pendingToken', Value: token },
-      { Name: 'pendingEmail', Value: TEST_MAIL },
-      { Name: 'pendingTime', Value: created.toString() },
-      ] }] });
-
-    const manager = new AccountManager(new Db(sdb));
-
-    manager.confirmEmail(token).catch((err) => {
-      expect(err.message).to.contain('timed out.');
-      done();
-    }).catch(done);
+    const receipt = new Receipt().createConf(ACCOUNT_ID, before3Hours).sign(SESS_PRIV);
+    try {
+      manager.confirmEmail(receipt);
+    } catch (err) {
+      expect(err.message).to.contain('Unauthorized: session expired since');
+      return;
+    }
+    throw new Error('should have thrown');
   });
 
   it('should error on unknown email token.', (done) => {
     const token = '65e95013-ac29-4ee9-a1fa-5e712e0178a5';
+    sinon.stub(sdb, 'getAttributes').yields(null, { Items: [] });
+    const manager = new AccountManager(new Db(sdb), null, null, null, null, SESS_PRIV);
 
-    sinon.stub(sdb, 'select').yields(null, { Items: [] });
-
-    const manager = new AccountManager(new Db(sdb));
-
-    manager.confirmEmail(token).catch((err) => {
+    const receipt = new Receipt().createConf(token).sign(SESS_PRIV);
+    manager.confirmEmail(receipt).catch((err) => {
       expect(err.message).to.contain('Not Found:');
       done();
     }).catch(done);
   });
 
   it('should error on invalid email token.', () => {
-    sinon.stub(sdb, 'select').yields(null, { Items: [] });
-    const manager = new AccountManager(new Db(sdb));
+    const manager = new AccountManager();
 
     const token = '0:ZelQE6wpTumh-l5xLgF4pQ';
     try {
       manager.confirmEmail(token);
     } catch (err) {
-      expect(err.message).to.contain('Bad Request:');
+      expect(err.message).to.contain('Unauthorized: invalid session');
       return;
     }
     throw new Error('should have thrown');
@@ -239,5 +348,6 @@ describe('Account Manager', () => {
     if (sdb.select.restore) sdb.select.restore();
     if (recaptcha.verify.restore) recaptcha.verify.restore();
     if (sns.publish.restore) sns.publish.restore();
+    if (ses.sendEmail.restore) ses.sendEmail.restore();
   });
 });

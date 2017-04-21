@@ -1,16 +1,98 @@
 import uuid from 'node-uuid';
-import { BadRequest } from './errors';
+import { Receipt, Type } from 'poker-helper';
+import ethUtil from 'ethereumjs-util';
+import { BadRequest, Unauthorized, Forbidden, Conflict } from './errors';
 
 const timeout = 2; // hours <- timeout for email verification
 const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const emailRegex = /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
 
-function AccountManager(db, email, recaptcha, sns, topicArn) {
+/**
+ * Checks if the given string is an address
+ *
+ * @method isAddress
+ * @param {String} address the given HEX adress
+ * @return {Boolean}
+*/
+function isAddress(address) {
+  if (!/^(0x)?[0-9a-f]{40}$/i.test(address)) {
+    // check if it has the basic requirements of an address
+    return false;
+  } else if (/^(0x)?[0-9a-f]{40}$/.test(address) || /^(0x)?[0-9A-F]{40}$/.test(address)) {
+    // If it's all small caps or all all caps, return true
+    return true;
+  }
+  // Otherwise check each case
+  return isChecksumAddress(address);
+};
+/**
+ * Checks if the given string is a checksummed address
+ *
+ * @method isChecksumAddress
+ * @param {String} address the given HEX adress
+ * @return {Boolean}
+*/
+function isChecksumAddress(addr) {
+  // Check each case
+  var address = addr.replace('0x', '');
+  var addressHash = ethUtil.sha3(address.toLowerCase());
+  for (var i = 0; i < 40; i += 1) {
+    // the nth letter should be uppercase if the nth digit of casemap is 1
+    if ((parseInt(addressHash[i], 16) > 7
+      && address[i].toUpperCase() !== address[i])
+      || (parseInt(addressHash[i], 16) <= 7
+        && address[i].toLowerCase() !== address[i])) {
+      return false;
+    }
+  }
+  return true;
+};
+
+function checkSession(sessionReceipt, sessionAddr, type) {
+  // check session
+  let session;
+  try {
+    session = Receipt.parse(sessionReceipt);
+  } catch(err) {
+    throw new Unauthorized(`invalid session: ${err.message}.`);
+  }
+  if (session.signer !== sessionAddr) {
+    throw new Unauthorized(`invalid session signer: ${session.signer}.`);
+  }
+  const before2Hours = (Date.now() / 1000) - (60 * 60 * 2);
+  if (session.created < before2Hours) {
+    throw new Unauthorized(`session expired since ${before2Hours - session.created} seconds.`);
+  }
+  if (session.type !== type) {
+    throw new Forbidden(`Wallet operation forbidden with session type ${session.type}.`);
+  }
+  return session;
+};
+
+function checkWallet(walletStr) {
+  let wallet;
+  try {
+    wallet = JSON.parse(walletStr);
+  } catch(err) {
+    throw new BadRequest(`invalid wallet json: ${err.message}.`);
+  }
+  if (!isAddress(wallet.address)) {
+    throw new BadRequest(`invalid address ${wallet.address} in wallet.`);
+  }
+  return wallet;
+}
+
+function AccountManager(db, email, recaptcha, sns, topicArn, sessionPriv) {
   this.db = db;
   this.email = email;
   this.recaptcha = recaptcha;
   this.sns = sns;
   this.topicArn = topicArn;
+  if (sessionPriv) {
+    this.sessionPriv = sessionPriv;
+    const priv = new Buffer(sessionPriv.replace('0x', ''), 'hex');
+    this.sessionAddr = `0x${ethUtil.privateToAddress(priv).toString('hex')}`;
+  }
 }
 
 AccountManager.prototype.getAccount = function getAccount(accountId) {
@@ -27,14 +109,14 @@ AccountManager.prototype.queryAccount = function queryAccount(email) {
 };
 
 AccountManager.prototype.addAccount = function addAccount(accountId,
-  email, wallet, recapResponse, origin, sourceIp) {
+  email, recapResponse, origin, sourceIp) {
   if (!uuidRegex.test(accountId)) {
     throw new BadRequest(`passed accountId ${accountId} not uuid v4.`);
   }
   if (!emailRegex.test(email)) {
     throw new BadRequest(`passed email ${email} has invalid format.`);
   }
-  const token = uuid.v4();
+  const receipt = new Receipt().createConf(accountId).sign(this.sessionPriv);
 
   const conflict = this.db.checkAccountConflict(accountId, email);
   const captcha = this.recaptcha.verify(recapResponse, sourceIp);
@@ -42,36 +124,81 @@ AccountManager.prototype.addAccount = function addAccount(accountId,
     const now = new Date().toString();
     return this.db.putAccount(accountId, {
       created: [now],
-      wallet: [wallet],
-      pendingToken: [token],
-      pendingTime: [now],
       pendingEmail: [email],
     });
   }).then(() => {
-    return this.email.sendVerification(email, token, origin);
+    return this.email.sendConfirm(email, receipt, origin);
   });
 };
 
-AccountManager.prototype.confirmEmail = function confirmEmail(token) {
-  if (!uuidRegex.test(token)) {
-    throw new BadRequest(`passed token ${token} not uuid v4.`);
-  }
+AccountManager.prototype.resetRequest = function resetRequest(email,
+  recapResponse, origin, sourceIp) {
   let account;
-  return this.db.getAccountByToken(token).then((_account) => {
-    account = _account;
-    const created = new Date(account.pendingTime);
-    created.setHours(created.getHours() + timeout);
-    if (created < new Date()) {
-      throw new BadRequest('verification fulfillment timed out.');
+  const accountProm = this.db.getAccountByEmail(email);
+  const captchaProm = this.recaptcha.verify(recapResponse, sourceIp);
+  return Promise.all([accountProm, captchaProm]).then((rsp) => {
+    account = rsp[0];
+    const receipt = new Receipt().resetConf(account.id).sign(this.sessionPriv);
+    return this.email.sendReset(email, receipt, origin);
+  });
+};
+
+AccountManager.prototype.setWallet = function setWallet(sessionReceipt, walletStr) {
+  // check session
+  const session = checkSession(sessionReceipt, this.sessionAddr, Type.CREATE_CONF);
+  // check data
+  const wallet = checkWallet(walletStr);
+  // check pending wallet exists
+  return this.db.getAccount(session.accountId).then((account) => {
+    if (account.wallet) {
+      throw new Conflict('wallet already set.');
     }
-    const complete = this.db.updateEmailComplete(account.id, account.pendingEmail);
-    const wallet = JSON.parse(account.wallet);
-    const dispatch = this.notify(`EmailConfirmed::${wallet.address}`, {
-      accountId: account.id,
+    // set new wallet
+    return this.db.setWallet(session.accountId, walletStr);
+  }).then(() => {
+    // notify worker to create contracts
+    return this.notify(`WalletCreated::${wallet.address}`, {
+      accountId: session.accountId,
       signerAddr: wallet.address,
     });
-    return Promise.all([complete, dispatch]);
-  }).then(() => Promise.resolve({ accountId: account.id }));
+  });
+};
+
+AccountManager.prototype.resetWallet = function resetWallet(sessionReceipt, walletStr) {
+  // check session
+  const session = checkSession(sessionReceipt, this.sessionAddr, Type.RESET_CONF);
+  // check data
+  const wallet = checkWallet(walletStr);
+  // check existing wallet
+  return this.db.getAccount(session.accountId).then((account) => {
+    if (!account.wallet) {
+      throw new Conflict('no existing wallet found.');
+    }
+    const existing = JSON.parse(account.wallet);
+    if (existing.address === wallet.address) {
+      throw new Conflict('can not reset wallet with same address.');
+    }
+    // reset wallet
+    return this.db.setWallet(session.accountId, walletStr);
+  }).then(() => {
+    // notify worker to send recovery transaction
+    return this.notify(`WalletReset::${wallet.address}`, {
+      accountId: session.accountId,
+      signerAddr: wallet.address,
+    });
+  });
+};
+
+AccountManager.prototype.confirmEmail = function confirmEmail(sessionReceipt) {
+  // check session
+  const session = checkSession(sessionReceipt, this.sessionAddr, Type.CREATE_CONF);
+  // handle email
+  return this.db.getAccount(session.accountId).then((account) => {
+    if (account.email) {
+      throw new BadRequest('email already set.');
+    }
+    return this.db.updateEmailComplete(session.accountId, account.pendingEmail);
+  });
 };
 
 AccountManager.prototype.notify = function notify(subject, event) {

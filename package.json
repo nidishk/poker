@@ -13,7 +13,7 @@
     "build:install": "cp package.json dist/ && cd dist && npm install --production",
     "package": "npm run build && npm run package:pack",
     "package:pack": "zip -r artifact.zip dist/*",
-    "test": "mocha -r babel-register -r babel-polyfill index.test.js"
+    "test": "mocha -r babel-register -r babel-polyfill *.test.js"
   },
   "license": "MIT",
   "devDependencies": {
@@ -46,9 +46,10 @@
     "babel-plugin-transform-builtin-extend": "^1.1.2",
     "babel-runtime": "^6.11.6",
     "httpinvoke": "^1.4.0",
-    "poker-helper": "../ab-poker-helper",
     "node-uuid": "^1.4.7",
+    "poker-helper": "^0.3.14",
     "querystring": "^0.2.0",
-    "raven": "^1.2.1"
+    "raven": "^1.2.1",
+    "utf8": "^2.1.2"
   }
 }

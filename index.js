@@ -28,33 +28,53 @@ exports.handler = function handler(event, context, callback) {
 
   const recapSecret = event['stage-variables'].recaptchaSecret;
   const path = event.context['resource-path'];
+  const method = event.context['http-method'];
+  const topicArn = event['stage-variables'].topicArn;
+  const sessionPriv = process.env.SESSION_PRIV;
 
   let handleRequest;
-  const manager = new AccountManager(new Db(simpledb), new Email(ses), new Recaptcha(recapSecret), new AWS.SNS(), event['stage-variables'].topicArn);
+  const manager = new AccountManager(new Db(simpledb), new Email(ses),
+    new Recaptcha(recapSecret), new AWS.SNS(), topicArn, sessionPriv);
 
   try {
     if (path.indexOf('confirm') > -1) {
-      handleRequest = manager.confirmEmail(event.token);
+      handleRequest = manager.confirmEmail(event.sessionReceipt);
+    } else if (path.indexOf('reset') > -1) {
+      handleRequest = manager.resetRequest(
+        event.email,
+        event.recapResponse,
+        event.origin,
+        event.context['source-ip'],
+      );
     } else if (path.indexOf('query') > -1) {
       handleRequest = manager.queryAccount(event.email);
+    } else if (path.indexOf('wallet') > -1) {
+      if (method === 'POST') {
+        handleRequest = manager.setWallet(event.sessionReceipt, event.wallet);
+      }
+      if (method === 'PUT') {
+        handleRequest = manager.resetWallet(event.sessionReceipt, event.wallet);
+      }      
     } else if (path.indexOf('account') > -1) {
-      if (event.context['http-method'] === 'GET') {
+      if (method === 'GET') {
         handleRequest = manager.getAccount(event.params.path.accountId);
-      } else {
+      }
+      if (method === 'POST') {
         handleRequest = manager.addAccount(
           event.params.path.accountId,
           event.email,
-          event.wallet,
           event.recapResponse,
           event.origin,
           event.context['source-ip'],
         );
       }
-    } else {
+    }
+    if (typeof handleRequest === 'undefined') {
       handleRequest = Promise.reject(`Not Found: unexpected path: ${path}`);
     }
   } catch (err) {
     handleError(err, callback);
+    return;
   }
   handleRequest.then((data) => {
     callback(null, data);
