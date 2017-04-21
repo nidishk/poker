@@ -21,10 +21,9 @@ Email.prototype.sendVerification = function sendVerification(email, fulfillment,
         } } },
     }, (err, data) => {
       if (err) {
-        reject(`Error: ${err}`);
-        return;
+        return reject(`Error: ${err}`);
       }
-      fulfill(data);
+      return fulfill(data);
     });
   });
 };

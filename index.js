@@ -12,20 +12,19 @@ const handleError = function handleError(err, callback) {
   Raven.captureException(err, { server_name: 'account_service' }, (sendErr) => {
     if (sendErr) {
       console.log(JSON.stringify(sendErr)); // eslint-disable-line no-console
-      callback(sendErr);
-      return;
+      return callback(sendErr);
     }
-    // this shall map to http 500
-    callback(`Error: ${err.message}`);
+    if (err.errName) {
+      // these are known errors: 4xx
+      return callback(err.message);
+    }
+    // everything shall map to http 500
+    return callback(`Error: ${err.message}`);
   });
 };
 
 exports.handler = function handler(event, context, callback) {
-  Raven.config(process.env.SENTRY_URL, {
-    captureUnhandledRejections: true,
-  }).install(() => {
-    callback(null, 'This is thy sheath; there rust, and let me die.');
-  });
+  Raven.config(process.env.SENTRY_URL).install();
 
   const recapSecret = event['stage-variables'].recaptchaSecret;
   const path = event.context['resource-path'];
@@ -56,9 +55,7 @@ exports.handler = function handler(event, context, callback) {
     }
   } catch (err) {
     handleError(err, callback);
-    return;
   }
-
   handleRequest.then((data) => {
     callback(null, data);
   }).catch((err) => {

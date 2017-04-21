@@ -39,11 +39,10 @@ Db.prototype.getAccount = function getAccount(accountId) {
       ItemName: accountId,
     }, (err, data) => {
       if (err) {
-        reject(`Error: ${err}`);
-        return;
+        return reject(`Error: ${err}`);
       }
       if (!data.Attributes) {
-        throw new NotFound(`Account with ID ${accountId} not found.`);
+        return reject(new NotFound(`Account with ID ${accountId} not found.`));
       }
       fulfill(transform(data.Attributes));
     });
@@ -57,11 +56,10 @@ Db.prototype.checkAccountConflict = function checkAccountConflict(accountId, ema
       ItemName: accountId,
     }, (err, data) => {
       if (err) {
-        reject(`Error: ${err}`);
-        return;
+        return reject(`Error: ${err}`);
       }
       if (data.Attributes !== undefined) {
-        throw new Conflict(`account with same Id ${accountId} found.`);
+        return reject(new Conflict(`account with same Id ${accountId} found.`));
       }
       fulfill();
     });
@@ -71,11 +69,10 @@ Db.prototype.checkAccountConflict = function checkAccountConflict(accountId, ema
       SelectExpression: `select * from \`${this.domain}\` where email =  "${email}" or pendingEmail =  "${email}"  limit 1`,
     }, (err, data) => {
       if (err) {
-        reject(`Error: ${err}`);
-        return;
+        return reject(`Error: ${err}`);
       }
       if (data.Items && data.Items.length > 0) {
-        throw new Conflict(`email ${email} taken.`);
+        return reject(new Conflict(`email ${email} taken.`));
       }
       fulfill();
     });
@@ -89,11 +86,10 @@ Db.prototype.getAccountByToken = function getAccountByToken(token) {
       SelectExpression: `select * from \`${this.domain}\` where pendingToken =  "${token}" limit 1`,
     }, (err, data) => {
       if (err) {
-        reject(`Error: ${err}`);
-        return;
+        return reject(`Error: ${err}`);
       }
       if (!data.Items || data.Items.length === 0) {
-        throw new NotFound(`token ${token} unknown.`);
+        return reject(new NotFound(`token ${token} unknown.`));
       }
       const rv = transform(data.Items[0].Attributes);
       rv.id = data.Items[0].Name;
@@ -108,11 +104,10 @@ Db.prototype.getAccountByEmail = function getAccountByEmail(email) {
       SelectExpression: `select * from \`${this.domain}\` where email =  "${email}" limit 1`,
     }, (err, data) => {
       if (err) {
-        reject(`Error: ${err}`);
-        return;
+        return reject(`Error: ${err}`);
       }
       if (!data.Items || data.Items.length === 0) {
-        throw new NotFound(`email ${email} unknown.`);
+        return reject(new NotFound(`email ${email} unknown.`));
       }
       const rv = transform(data.Items[0].Attributes);
       rv.id = data.Items[0].Name;
@@ -129,8 +124,7 @@ Db.prototype.putAccount = function putAccount(accountId, attributes) {
       Attributes: transform(attributes),
     }, (err, data) => {
       if (err) {
-        reject(`Error: ${err}`);
-        return;
+        return reject(`Error: ${err}`);
       }
       fulfill(data);
     });
@@ -145,8 +139,7 @@ Db.prototype.updateEmailComplete = function updateEmailComplete(accountId, email
       Attributes: transform({ email: [email] }),
     }, (err, data) => {
       if (err) {
-        reject(`Error: ${err}`);
-        return;
+        return reject(`Error: ${err}`);
       }
       fulfill(data);
     });
@@ -162,8 +155,7 @@ Db.prototype.updateEmailComplete = function updateEmailComplete(accountId, email
       ],
     }, (err, data) => {
       if (err) {
-        reject(`Error: ${err}`);
-        return;
+        return reject(`Error: ${err}`);
       }
       fulfill(data);
     });

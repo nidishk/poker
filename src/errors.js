@@ -1,37 +1,21 @@
 
-function Unauthorized(message) {
-  this.name = 'Unauthorized';
-  this.message = `${this.name}: ${message}`;
-  this.stack = (new Error()).stack;
+class ExtendableError extends Error {
+  constructor(message) {
+    super();
+    const prefix = this.constructor.name.replace(/([a-z](?=[A-Z]))/g, '$1 ');
+    this.message = `${prefix}: ${message}`;
+    this.errName = this.constructor.name;
+  }
 }
-Unauthorized.prototype = new Error();
 
-function Forbidden(message) {
-  this.name = 'Forbidden';
-  this.message = `${this.name}: ${message}`;
-  this.stack = (new Error()).stack;
-}
-Forbidden.prototype = new Error();
+class Unauthorized extends ExtendableError {}
 
-function BadRequest(message) {
-  this.name = 'BadRequest';
-  this.message = `Bad Request: ${message}`;
-  this.stack = (new Error()).stack;
-}
-BadRequest.prototype = new Error();
+class Forbidden extends ExtendableError {}
 
-function NotFound(message) {
-  this.name = 'NotFound';
-  this.message = `Not Found: ${message}`;
-  this.stack = (new Error()).stack;
-}
-NotFound.prototype = new Error();
+class BadRequest extends ExtendableError {}
 
-function Conflict(message) {
-  this.name = 'Conflict';
-  this.message = `${this.name}: ${message}`;
-  this.stack = (new Error()).stack;
-}
-Conflict.prototype = new Error();
+class NotFound extends ExtendableError {}
+
+class Conflict extends ExtendableError {}
 
 export { Unauthorized, NotFound, BadRequest, Forbidden, Conflict };

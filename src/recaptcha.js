@@ -10,7 +10,7 @@ function Recaptcha(secret) {
 }
 
 Recaptcha.prototype.verify = function verify(recapResponse, sourceIp) {
-  return new Promise((fulfill) => {
+  return new Promise((fulfill, reject) => {
     const options = {
       input: querystring.stringify({
         response: recapResponse,
@@ -28,11 +28,11 @@ Recaptcha.prototype.verify = function verify(recapResponse, sourceIp) {
     };
     return httpinvoke(recaptchaUrl, 'POST', options).then((res) => {
       if (!res.body.success) {
-        throw new BadRequest(res.body);
+        return reject(new BadRequest(JSON.stringify(res.body)));
       }
-      fulfill();
+      return fulfill();
     }, (err) => {
-      throw new BadRequest(err);
+      return reject(new BadRequest(JSON.stringify(err)));
     });
   });
 };

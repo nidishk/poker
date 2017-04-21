@@ -39,7 +39,6 @@ AccountManager.prototype.addAccount = function addAccount(accountId,
   const conflict = this.db.checkAccountConflict(accountId, email);
   const captcha = this.recaptcha.verify(recapResponse, sourceIp);
   return Promise.all([conflict, captcha]).then(() => {
-    this.email.sendVerification(email, token, origin);
     const now = new Date().toString();
     return this.db.putAccount(accountId, {
       created: [now],
@@ -48,6 +47,8 @@ AccountManager.prototype.addAccount = function addAccount(accountId,
       pendingTime: [now],
       pendingEmail: [email],
     });
+  }).then(() => {
+    return this.email.sendVerification(email, token, origin);
   });
 };
 
