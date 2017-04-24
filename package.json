@@ -45,11 +45,12 @@
     "aws-sdk": "^2.22.0",
     "babel-plugin-transform-builtin-extend": "^1.1.2",
     "babel-runtime": "^6.11.6",
+    "buffer-v6-polyfill": "^1.0.3",
     "httpinvoke": "^1.4.0",
-    "node-uuid": "^1.4.7",
     "poker-helper": "^0.3.14",
     "querystring": "^0.2.0",
     "raven": "^1.2.1",
-    "utf8": "^2.1.2"
+    "utf8": "^2.1.2",
+    "uuid": "^3.0.1"
   }
 }

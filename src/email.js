@@ -31,12 +31,14 @@ function Email(ses) {
 }
 
 Email.prototype.sendConfirm = function sendConfirm(email, fulfillment, origin) {
-  const msg = `${welcome} \n\n${origin}/confirm/${fulfillment} \n\n${goodbye}`;
+  const code = encodeURIComponent(fulfillment);
+  const msg = `${welcome} \n\n${origin}/confirm/${code} \n\n${goodbye}`;
   return sendVerification(this.ses, email, subject, msg);
 };
 
 Email.prototype.sendReset = function sendReset(email, fulfillment, origin) {
-  const msg = `${reset} \n\n${origin}/confirm/${fulfillment} \n\n${goodbye}`;
+  const code = encodeURIComponent(fulfillment);
+  const msg = `${reset} \n\n${origin}/confirm/${code} \n\n${goodbye}`;
   return sendVerification(this.ses, email, resetSubject, msg);
 };
 

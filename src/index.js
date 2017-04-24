@@ -1,4 +1,5 @@
-import uuid from 'node-uuid';
+import uuid from 'uuid';
+import poly from 'buffer-v6-polyfill';
 import { Receipt, Type } from 'poker-helper';
 import ethUtil from 'ethereumjs-util';
 import { BadRequest, Unauthorized, Forbidden, Conflict } from './errors';
