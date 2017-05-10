@@ -6,6 +6,7 @@ import { BadRequest, Unauthorized, Forbidden, Conflict } from './errors';
 
 const timeout = 2; // hours <- timeout for email verification
 const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const refRegex = /^[0-9a-f]{8}$/i;
 const emailRegex = /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
 
 /**
@@ -105,28 +106,72 @@ AccountManager.prototype.getAccount = function getAccount(accountId) {
   });
 };
 
+AccountManager.prototype.getRef = function getRef(refCode) {
+  const globalRef = '00000000';
+  // todo: check ref format
+  if (uuidRegex.test(refCode)) {
+    // http 400
+    throw new BadRequest(`passed refCode ${refCode} not valid.`);
+  }
+  const refProm = this.db.getRef(refCode);
+  const globProm = this.db.getRef(globalRef);
+  return Promise.all([refProm, globProm]).then((rsp) => {
+    const referral = rsp[0];
+    const globalRef = rsp[1];
+    if (globalRef.allowance < 1) {
+      // 420 - global signup limit reached
+      return Promise.reject('Bad Request: global limit reached');
+    }
+    if (referral.allowance < 1) {
+      // 418 - invite limit for this code reached
+      return Promise.reject('Bad Request: account invite limit reached');
+    }
+    if (uuidRegex.test(globalRef.account)) {
+      // 200 - return global ref code
+      // this will allow users without ref code to sign up
+      return Promise.resolve({ defaultRef: globalRef.account });
+    } else {
+      // 200 - do not provide default ref code
+      // users without ref code will not be able to sign up
+      return Promise.resolve({});
+    }
+  });
+}
+
 AccountManager.prototype.queryAccount = function queryAccount(email) {
   return this.db.getAccountByEmail(email).then(account => Promise.resolve(account));
 };
 
 AccountManager.prototype.addAccount = function addAccount(accountId,
-  email, recapResponse, origin, sourceIp) {
+  email, recapResponse, origin, sourceIp, refCode) {
   if (!uuidRegex.test(accountId)) {
     throw new BadRequest(`passed accountId ${accountId} not uuid v4.`);
   }
   if (!emailRegex.test(email)) {
     throw new BadRequest(`passed email ${email} has invalid format.`);
   }
+  if (!refRegex.test(refCode)) {
+    throw new BadRequest(`passed refCode ${refCode} has invalid format.`);
+  }
   const receipt = new Receipt().createConf(accountId).sign(this.sessionPriv);
 
-  const conflict = this.db.checkAccountConflict(accountId, email);
-  const captcha = this.recaptcha.verify(recapResponse, sourceIp);
-  return Promise.all([conflict, captcha]).then(() => {
+  const conflictProm = this.db.checkAccountConflict(accountId, email);
+  const captchaProm = this.recaptcha.verify(recapResponse, sourceIp);
+  const refProm = this.db.getRef(refCode);
+  return Promise.all([conflictProm, captchaProm, refProm]).then((rsp) => {
+    const referral = rsp[2];
+    if (referral.allowance < 1) {
+      // 418 - invite limit for this code reached
+      throw new BadRequest('referral invite limit reached.');
+    }
     const now = new Date().toString();
-    return this.db.putAccount(accountId, {
+    const putAccProm = this.db.putAccount(accountId, {
       created: [now],
       pendingEmail: [email],
+      referral: [referral.account],
     });
+    const refAllowProm = this.db.setRefAllowance(refCode, referral.allowance - 1);
+    return Promise.all([putAccProm, refAllowProm]);
   }).then(() => {
     return this.email.sendConfirm(email, receipt, origin);
   });
@@ -171,11 +216,15 @@ AccountManager.prototype.resetWallet = function resetWallet(sessionReceipt, wall
   // check data
   const wallet = checkWallet(walletStr);
   // check existing wallet
+  let existing;
   return this.db.getAccount(session.accountId).then((account) => {
     if (!account.wallet) {
       throw new Conflict('no existing wallet found.');
     }
-    const existing = JSON.parse(account.wallet);
+    existing = JSON.parse(account.wallet);
+    if (!isAddress(wallet.address)) {
+      throw new BadRequest(`invalid address ${wallet.address} in wallet.`);
+    }
     if (existing.address === wallet.address) {
       throw new Conflict('can not reset wallet with same address.');
     }
@@ -185,7 +234,8 @@ AccountManager.prototype.resetWallet = function resetWallet(sessionReceipt, wall
     // notify worker to send recovery transaction
     return this.notify(`WalletReset::${wallet.address}`, {
       accountId: session.accountId,
-      signerAddr: wallet.address,
+      oldSignerAddr: existing.address,
+      newSignerAddr: wallet.address,
     });
   });
 };

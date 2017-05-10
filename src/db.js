@@ -29,6 +29,7 @@ const transform = (data) => {
 function Db(sdb) {
   this.sdb = sdb;
   this.domain = 'ab-accounts';
+  this.refDomain = 'ab-refs';
 }
 
 
@@ -156,6 +157,74 @@ Db.prototype.updateEmailComplete = function updateEmailComplete(accountId, email
     });
   });
   return Promise.all([put, del]);
+};
+
+Db.prototype.getRef = function getRef(refCode) {
+  return new Promise((fulfill, reject) => {
+    this.sdb.getAttributes({
+      DomainName: this.refDomain,
+      ItemName: refCode,
+    }, (err, data) => {
+      if (err) {
+        return reject(`Error: ${err}`);
+      }
+      if (!data.Attributes) {
+        return reject(new NotFound(`Referral with ID ${refCode} not found.`));
+      }
+      const rv = transform(data.Attributes);
+      rv.allowance = parseInt(rv.allowance, 10);
+      fulfill(rv);
+    });
+  });
+};
+
+Db.prototype.getRefByAccount = function getRefByAccount(accountId) {
+  return new Promise((fulfill, reject) => {
+    this.sdb.select({
+      SelectExpression: `select * from \`${this.refDomain}\` where account =  "${accountId}" limit 1`,
+    }, (err, data) => {
+      if (err) {
+        return reject(`Error: ${err}`);
+      }
+      if (!data.Items || data.Items.length === 0) {
+        return reject(new NotFound(`accountId ${accountId} unknown.`));
+      }
+      const rv = transform(data.Items[0].Attributes);
+      rv.allowance = parseInt(rv.allowance, 10);
+      rv.id = data.Items[0].Name;
+      fulfill(rv);
+    });
+  });
+};
+
+Db.prototype.putRef = function putRef(refCode, account, allowance) {
+  return new Promise((fulfill, reject) => {
+    this.sdb.putAttributes({
+      DomainName: this.refDomain,
+      ItemName: refCode,
+      Attributes: transform({ account, allowance: allowance.toString() }),
+    }, (err, data) => {
+      if (err) {
+        return reject(`Error: ${err}`);
+      }
+      fulfill(data);
+    });
+  });
+};
+
+Db.prototype.setRefAllowance = function setRefAllowance(refCode, newAllowance) {
+  return new Promise((fulfill, reject) => {
+    this.sdb.putAttributes({
+      DomainName: this.refDomain,
+      ItemName: refCode,
+      Attributes: transform({ allowance: [newAllowance.toString()] }),
+    }, (err, data) => {
+      if (err) {
+        return reject(`Error: ${err}`);
+      }
+      fulfill(data);
+    });
+  });
 };
 
 module.exports = Db;

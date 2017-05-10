@@ -54,7 +54,9 @@ exports.handler = function handler(event, context, callback) {
       }
       if (method === 'PUT') {
         handleRequest = manager.resetWallet(event.sessionReceipt, event.wallet);
-      }      
+      }
+    } else if (path.indexOf('referral') > -1) {
+      handleRequest = manager.getRef(event.params.path.refCode);
     } else if (path.indexOf('account') > -1) {
       if (method === 'GET') {
         handleRequest = manager.getAccount(event.params.path.accountId);
@@ -66,6 +68,7 @@ exports.handler = function handler(event, context, callback) {
           event.recapResponse,
           event.origin,
           event.context['source-ip'],
+          event.refCode,
         );
       }
     }

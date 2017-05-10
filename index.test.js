@@ -11,6 +11,8 @@ import { BadRequest } from './src/errors';
 
 chai.use(sinonChai);
 
+const globalRef = '00000000';
+
 const sdb = {
   getAttributes() {},
   putAttributes() {},
@@ -66,7 +68,7 @@ describe('Account Manager - add account ', () => {
 
     const manager = new AccountManager(new Db(sdb), null, recaptcha, null, null, SESS_PRIV);
 
-    manager.addAccount(ACCOUNT_ID, TEST_MAIL, {}).catch((err) => {
+    manager.addAccount(ACCOUNT_ID, TEST_MAIL, {}, null, null, globalRef).catch((err) => {
       expect(err.message).to.contain('Conflict: ');
       expect(err.message).to.contain(ACCOUNT_ID);
       done();
@@ -79,14 +81,17 @@ describe('Account Manager - add account ', () => {
     sinon.stub(recaptcha, 'verify').returns(Promise.reject(new BadRequest('wrong')));
     const manager = new AccountManager(new Db(sdb), null, recaptcha, null, null, SESS_PRIV);
 
-    manager.addAccount(ACCOUNT_ID, TEST_MAIL, {}).catch((err) => {
+    manager.addAccount(ACCOUNT_ID, TEST_MAIL, {}, null, null, globalRef).catch((err) => {
       expect(err.message).to.contain('Bad Request: ');
       done();
     }).catch(done);
   });
 
   it('should prevent to add existing email.', (done) => {
-    sinon.stub(sdb, 'getAttributes').yields(null, {});
+    sinon.stub(sdb, 'getAttributes').yields(null, {
+      Attributes: [
+      { Name: 'allowance', Value: ['1'] },
+      ] }).onFirstCall().yields(null, {});
     sinon.stub(sdb, 'select').yields(null, { Items: [{ Name: '123',
       Attributes: [
       { Name: 'Email', Value: TEST_MAIL },
@@ -95,7 +100,7 @@ describe('Account Manager - add account ', () => {
 
     const manager = new AccountManager(new Db(sdb), null, recaptcha, null, null, SESS_PRIV);
 
-    manager.addAccount(ACCOUNT_ID, TEST_MAIL, {}).catch((err) => {
+    manager.addAccount(ACCOUNT_ID, TEST_MAIL, {}, null, null, globalRef).catch((err) => {
       expect(err.message).to.contain('Conflict: ');
       expect(err.message).to.contain(TEST_MAIL);
       done();
@@ -103,7 +108,10 @@ describe('Account Manager - add account ', () => {
   });
 
   it('should prevent to add existing pending email.', (done) => {
-    sinon.stub(sdb, 'getAttributes').yields(null, {});
+    sinon.stub(sdb, 'getAttributes').yields(null, {
+      Attributes: [
+      { Name: 'allowance', Value: ['1'] },
+      ] }).onFirstCall().yields(null, {});
     sinon.stub(sdb, 'select').yields(null, { Items: [{ Name: '123',
       Attributes: [
       { Name: 'pendingEmail', Value: TEST_MAIL },
@@ -112,7 +120,7 @@ describe('Account Manager - add account ', () => {
 
     const manager = new AccountManager(new Db(sdb), null, recaptcha, null, null, SESS_PRIV);
 
-    manager.addAccount(ACCOUNT_ID, TEST_MAIL, {}).catch((err) => {
+    manager.addAccount(ACCOUNT_ID, TEST_MAIL, {}, null, null, globalRef).catch((err) => {
       expect(err.message).to.contain('Conflict: ');
       expect(err.message).to.contain(TEST_MAIL);
       done();
@@ -120,18 +128,23 @@ describe('Account Manager - add account ', () => {
   });
 
   it('should allow to add account.', (done) => {
-    sinon.stub(sdb, 'getAttributes').yields(null, {});
+    sinon.stub(sdb, 'getAttributes').yields(null, {
+      Attributes: [
+      { Name: 'allowance', Value: ['1'] },
+      { Name: 'account', Value: [ACCOUNT_ID] },
+      ] }).onFirstCall().yields(null, {});
     sinon.stub(sdb, 'select').yields(null, {});
     sinon.stub(sdb, 'putAttributes').yields(null, { ResponseMetadata: {} });
     sinon.stub(recaptcha, 'verify').returns(Promise.resolve());
     sinon.stub(ses, 'sendEmail').yields(null, {});
     const manager = new AccountManager(new Db(sdb), new Email(ses), recaptcha, null, null, SESS_PRIV);
 
-    manager.addAccount(ACCOUNT_ID, TEST_MAIL, {}).then(() => {
+    manager.addAccount(ACCOUNT_ID, TEST_MAIL, {}, null, null, globalRef).then(() => {
       expect(sdb.putAttributes).calledWith({
         Attributes: [
           { Name: 'created', Replace: true, Value: sinon.match.any },
           { Name: 'pendingEmail', Replace: true, Value: TEST_MAIL },
+          { Name: 'referral', Replace: true, Value: [ACCOUNT_ID] },
         ],
         DomainName: 'ab-accounts',
         ItemName: ACCOUNT_ID,
@@ -241,7 +254,7 @@ describe('Account Manager - reset Wallet ', () => {
   it('should allow to reset Wallet.', (done) => {
     sinon.stub(sns, 'publish').yields(null, {});
     sinon.stub(sdb, 'getAttributes').yields(null, {Attributes: [
-      { Name: 'wallet', Value: '{}'},
+      { Name: 'wallet', Value: '{"address": "0x1234"}'},
     ]});
     sinon.stub(sdb, 'putAttributes').yields(null, { ResponseMetadata: {} });
     const manager = new AccountManager(new Db(sdb), null, null, sns, 'topicArn', SESS_PRIV);
@@ -257,7 +270,7 @@ describe('Account Manager - reset Wallet ', () => {
       });
       expect(sns.publish).callCount(1);
       expect(sns.publish).calledWith({
-        Message: `{"accountId":"${ACCOUNT_ID}","signerAddr":"${SESS_ADDR}"}`,
+        Message: `{"accountId":"${ACCOUNT_ID}","oldSignerAddr":"0x1234","newSignerAddr":"${SESS_ADDR}"}`,
         Subject: `WalletReset::${SESS_ADDR}`,
         TopicArn: 'topicArn',
       });
@@ -349,5 +362,27 @@ describe('Account Manager - congfirm email ', () => {
     if (recaptcha.verify.restore) recaptcha.verify.restore();
     if (sns.publish.restore) sns.publish.restore();
     if (ses.sendEmail.restore) ses.sendEmail.restore();
+  });
+});
+
+describe('Account Manager - referrals ', () => {
+  it('should allow to check referral code.', (done) => {
+    sinon.stub(sdb, 'getAttributes').yields(null, {Attributes: [
+      { Name: 'allowance', Value: '1' },
+      { Name: 'account', Value: ACCOUNT_ID },
+    ]});
+
+    const manager = new AccountManager(new Db(sdb));
+
+    manager.getRef('11223344').then((rsp) => {
+      expect(rsp.defaultRef).to.eql(ACCOUNT_ID);
+      done();
+    }).catch(done);
+  });
+
+  afterEach(() => {
+    if (sdb.getAttributes.restore) sdb.getAttributes.restore();
+    if (sdb.putAttributes.restore) sdb.putAttributes.restore();
+    if (sdb.select.restore) sdb.select.restore();
   });
 });
