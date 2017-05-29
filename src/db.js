@@ -207,7 +207,10 @@ Db.prototype.putRef = function putRef(refCode, account, allowance) {
     this.sdb.putAttributes({
       DomainName: this.refDomain,
       ItemName: refCode,
-      Attributes: transform({ account, allowance: allowance.toString() }),
+      Attributes: transform({
+        account: [account],
+        allowance: [allowance.toString()],
+      }),
     }, (err, data) => {
       if (err) {
         return reject(`Error: ${err}`);

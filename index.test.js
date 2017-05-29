@@ -127,6 +127,39 @@ describe('Account Manager - add account ', () => {
     }).catch(done);
   });
 
+  it('should prevent to signup when ref limit reached.', (done) => {
+    sinon.stub(sdb, 'getAttributes').yields(null, {
+      Attributes: [
+      { Name: 'allowance', Value: ['0'] },
+      ] }).onFirstCall().yields(null, {});
+    sinon.stub(sdb, 'select').yields(null, { Items: [] });
+    sinon.stub(recaptcha, 'verify').returns(Promise.resolve());
+
+    const manager = new AccountManager(new Db(sdb), null, recaptcha, null, null, SESS_PRIV);
+
+    manager.addAccount(ACCOUNT_ID, TEST_MAIL, {}, null, null, globalRef).catch((err) => {
+      expect(err.message).to.contain('Teapot: ');
+      done();
+    }).catch(done);
+  });
+
+  it('should prevent to signup global ref, if deactivated.', (done) => {
+    sinon.stub(sdb, 'getAttributes').yields(null, {
+      Attributes: [
+      { Name: 'allowance', Value: ['1'] },
+      { Name: 'account', Value: ['-'] },
+      ] }).onFirstCall().yields(null, {});
+    sinon.stub(sdb, 'select').yields(null, { Items: [] });
+    sinon.stub(recaptcha, 'verify').returns(Promise.resolve());
+
+    const manager = new AccountManager(new Db(sdb), null, recaptcha, null, null, SESS_PRIV);
+
+    manager.addAccount(ACCOUNT_ID, TEST_MAIL, {}, null, null, globalRef).catch((err) => {
+      expect(err.message).to.contain('Bad Request: passed refCode 00000000');
+      done();
+    }).catch(done);
+  });
+
   it('should allow to add account.', (done) => {
     sinon.stub(sdb, 'getAttributes').yields(null, {
       Attributes: [
@@ -218,6 +251,14 @@ describe('Account Manager - set Wallet ', () => {
         Attributes: [{ Name: 'wallet', Replace: true, Value: wallet }],
         DomainName: 'ab-accounts',
         ItemName: ACCOUNT_ID,
+      });
+      expect(sdb.putAttributes).calledWith({
+        Attributes: [
+          { Name: 'account', Replace: true, Value: ACCOUNT_ID },
+          { Name: 'allowance', Replace: true, Value: '3' },
+        ],
+        DomainName: 'ab-refs',
+        ItemName: sinon.match.any,
       });
       expect(sns.publish).callCount(1);
       expect(sns.publish).calledWith({
@@ -367,6 +408,58 @@ describe('Account Manager - congfirm email ', () => {
 });
 
 describe('Account Manager - referrals ', () => {
+  it('should return 420 when global limit reached.', (done) => {
+    sinon.stub(sdb, 'getAttributes').yields(null, { Attributes: [
+      { Name: 'allowance', Value: '0' },
+      { Name: 'account', Value: ACCOUNT_ID },
+    ] });
+    const manager = new AccountManager(new Db(sdb));
+
+    manager.getRef('11223344').catch((err) => {
+      expect(err.message).to.contain('Enhance Your Calm: ');
+      done();
+    }).catch(done);
+  });
+
+  it('should return 404 when ref code unknown.', (done) => {
+    sinon.stub(sdb, 'getAttributes').yields(null, {});
+    const manager = new AccountManager(new Db(sdb));
+
+    manager.getRef('11223344').catch((err) => {
+      expect(err.message).to.contain('Not Found: ');
+      done();
+    }).catch(done);
+  });
+
+  it('should return 400 when ref code invalid.', () => {
+    sinon.stub(sdb, 'getAttributes').yields(null, {});
+    const manager = new AccountManager(new Db(sdb));
+    try {
+      manager.getRef('----');
+    } catch (err) {
+      expect(err.message).to.contain('Bad Request: ');
+      return;
+    }
+    throw new Error('should have thrown');
+  });
+
+
+  it('should return 418 when account limit reached.', (done) => {
+    sinon.stub(sdb, 'getAttributes').yields(null, { Attributes: [
+      { Name: 'allowance', Value: '1' },
+      { Name: 'account', Value: ACCOUNT_ID },
+    ] }).onFirstCall().yields(null, { Attributes: [
+      { Name: 'allowance', Value: '0' },
+      { Name: 'account', Value: ACCOUNT_ID },
+    ] });
+    const manager = new AccountManager(new Db(sdb));
+
+    manager.getRef('11223344').catch((err) => {
+      expect(err.message).to.contain('Teapot: ');
+      done();
+    }).catch(done);
+  });
+
   it('should allow to check referral code.', (done) => {
     sinon.stub(sdb, 'getAttributes').yields(null, { Attributes: [
       { Name: 'allowance', Value: '1' },
@@ -377,6 +470,36 @@ describe('Account Manager - referrals ', () => {
 
     manager.getRef('11223344').then((rsp) => {
       expect(rsp.defaultRef).to.eql(ACCOUNT_ID);
+      done();
+    }).catch(done);
+  });
+
+  it('should allow to check global referral code.', (done) => {
+    sinon.stub(sdb, 'getAttributes').yields(null, {})
+    .onFirstCall().yields(null, { Attributes: [
+      { Name: 'allowance', Value: '1' },
+      { Name: 'account', Value: ACCOUNT_ID },
+    ] });
+
+    const manager = new AccountManager(new Db(sdb));
+
+    manager.getRef('00000000').then((rsp) => {
+      expect(rsp.defaultRef).to.eql(ACCOUNT_ID);
+      done();
+    }).catch(done);
+  });
+
+  it('should allow to check global referral code when invites closed.', (done) => {
+    sinon.stub(sdb, 'getAttributes').yields(null, {})
+    .onFirstCall().yields(null, { Attributes: [
+      { Name: 'allowance', Value: '1' },
+      { Name: 'account', Value: '-' },
+    ] });
+
+    const manager = new AccountManager(new Db(sdb));
+
+    manager.getRef('00000000').then((rsp) => {
+      expect(rsp).to.eql({});
       done();
     }).catch(done);
   });

@@ -18,4 +18,8 @@ class NotFound extends ExtendableError {}
 
 class Conflict extends ExtendableError {}
 
-export { Unauthorized, NotFound, BadRequest, Forbidden, Conflict };
+class EnhanceYourCalm extends ExtendableError {}
+
+class Teapot extends ExtendableError {}
+
+export { Unauthorized, NotFound, BadRequest, Forbidden, Conflict, EnhanceYourCalm, Teapot };

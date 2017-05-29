@@ -1,7 +1,7 @@
 import poly from 'buffer-v6-polyfill'; // eslint-disable-line no-unused-vars
 import { Receipt, Type } from 'poker-helper';
 import ethUtil from 'ethereumjs-util';
-import { BadRequest, Unauthorized, Forbidden, Conflict } from './errors';
+import { BadRequest, Unauthorized, Forbidden, Conflict, EnhanceYourCalm, Teapot } from './errors';
 
 const timeout = 2; // hours <- timeout for email verification
 const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -109,30 +109,36 @@ AccountManager.prototype.getAccount = function getAccount(accountId) {
 AccountManager.prototype.getRef = function getRef(refCode) {
   const globalRef = '00000000';
   // todo: check ref format
-  if (uuidRegex.test(refCode)) {
+  if (!refRegex.test(refCode)) {
     // http 400
     throw new BadRequest(`passed refCode ${refCode} not valid.`);
   }
-  const refProm = this.db.getRef(refCode);
+  let refProm;
+  if (globalRef === refCode) {
+    // if request has global refCode, avoid db request
+    refProm = Promise.resolve({ allowance: 1 });
+  } else {
+    refProm = this.db.getRef(refCode);
+  }
   const globProm = this.db.getRef(globalRef);
   return Promise.all([refProm, globProm]).then((rsp) => {
     const referral = rsp[0];
     const glob = rsp[1];
     if (glob.allowance < 1) {
       // 420 - global signup limit reached
-      return Promise.reject('Bad Request: global limit reached');
+      throw new EnhanceYourCalm('global limit reached');
     }
     if (referral.allowance < 1) {
       // 418 - invite limit for this code reached
-      return Promise.reject('Bad Request: account invite limit reached');
+      throw new Teapot('account invite limit reached');
     }
     if (uuidRegex.test(glob.account)) {
       // 200 - return global ref code
       // this will allow users without ref code to sign up
       return Promise.resolve({ defaultRef: glob.account });
     }
-      // 200 - do not provide default ref code
-      // users without ref code will not be able to sign up
+    // 200 - do not provide default ref code
+    // users without ref code will not be able to sign up
     return Promise.resolve({});
   });
 };
@@ -161,7 +167,11 @@ AccountManager.prototype.addAccount = function addAccount(accountId,
     const referral = rsp[2];
     if (referral.allowance < 1) {
       // 418 - invite limit for this code reached
-      throw new BadRequest('referral invite limit reached.');
+      throw new Teapot('referral invite limit reached.');
+    }
+
+    if (!uuidRegex.test(referral.account)) {
+      throw new BadRequest(`passed refCode ${refCode} can not be used for signup.`);
     }
     const now = new Date().toString();
     const putAccProm = this.db.putAccount(accountId, {
@@ -197,7 +207,11 @@ AccountManager.prototype.setWallet = function setWallet(sessionReceipt, walletSt
       throw new Conflict('wallet already set.');
     }
     // set new wallet
-    return this.db.setWallet(session.accountId, walletStr);
+    const walletProm = this.db.setWallet(session.accountId, walletStr);
+    // create ref code
+    const refCode = Math.floor(Math.random() * 4294967295).toString(16);
+    const refProm = this.db.putRef(refCode, session.accountId, 3);
+    return Promise.all([walletProm, refProm]);
   }).then(() =>
     // notify worker to create contracts
      this.notify(`WalletCreated::${wallet.address}`, {
