@@ -137,7 +137,8 @@ describe('Account Manager - add account ', () => {
     sinon.stub(sdb, 'putAttributes').yields(null, { ResponseMetadata: {} });
     sinon.stub(recaptcha, 'verify').returns(Promise.resolve());
     sinon.stub(ses, 'sendEmail').yields(null, {});
-    const manager = new AccountManager(new Db(sdb), new Email(ses), recaptcha, null, null, SESS_PRIV);
+    const manager = new AccountManager(new Db(sdb),
+      new Email(ses), recaptcha, null, null, SESS_PRIV);
 
     manager.addAccount(ACCOUNT_ID, TEST_MAIL, {}, null, null, globalRef).then(() => {
       expect(sdb.putAttributes).calledWith({
@@ -167,7 +168,6 @@ describe('Account Manager - add account ', () => {
     if (sns.publish.restore) sns.publish.restore();
     if (ses.sendEmail.restore) ses.sendEmail.restore();
   });
-
 });
 
 describe('Account Manager - reset request ', () => {
@@ -175,11 +175,12 @@ describe('Account Manager - reset request ', () => {
     sinon.stub(sdb, 'select').yields(null, { Items: [{ Name: ACCOUNT_ID,
       Attributes: [
       { Name: 'email', Value: TEST_MAIL },
-      { Name: 'wallet', Value: "{}" },
-    ] }] });
+      { Name: 'wallet', Value: '{}' },
+      ] }] });
     sinon.stub(recaptcha, 'verify').returns(Promise.resolve());
     sinon.stub(ses, 'sendEmail').yields(null, {});
-    const manager = new AccountManager(new Db(sdb), new Email(ses), recaptcha, null, null, SESS_PRIV);
+    const manager = new AccountManager(new Db(sdb),
+      new Email(ses), recaptcha, null, null, SESS_PRIV);
 
     manager.resetRequest(TEST_MAIL, {}).then(() => {
       expect(ses.sendEmail).calledWith(sinon.match({
@@ -200,7 +201,7 @@ describe('Account Manager - reset request ', () => {
     if (sns.publish.restore) sns.publish.restore();
     if (ses.sendEmail.restore) ses.sendEmail.restore();
   });
-});  
+});
 
 describe('Account Manager - set Wallet ', () => {
   it('should allow to set Wallet.', (done) => {
@@ -246,16 +247,16 @@ describe('Account Manager - reset Wallet ', () => {
     const receipt = new Receipt().createConf(ACCOUNT_ID).sign(SESS_PRIV);
     try {
       manager.resetWallet(receipt, {});
-    } catch(err) {
+    } catch (err) {
       expect(err.message).to.contain('Forbidden: Wallet operation forbidden with session type');
-    };
+    }
   });
 
   it('should allow to reset Wallet.', (done) => {
     sinon.stub(sns, 'publish').yields(null, {});
-    sinon.stub(sdb, 'getAttributes').yields(null, {Attributes: [
-      { Name: 'wallet', Value: '{"address": "0x1234"}'},
-    ]});
+    sinon.stub(sdb, 'getAttributes').yields(null, { Attributes: [
+      { Name: 'wallet', Value: '{"address": "0x1234"}' },
+    ] });
     sinon.stub(sdb, 'putAttributes').yields(null, { ResponseMetadata: {} });
     const manager = new AccountManager(new Db(sdb), null, null, sns, 'topicArn', SESS_PRIV);
 
@@ -291,16 +292,16 @@ describe('Account Manager - reset Wallet ', () => {
 
 describe('Account Manager - congfirm email ', () => {
   it('should allow to confirm email.', (done) => {
-    sinon.stub(sdb, 'getAttributes').yields(null, {Attributes: [
-      { Name: 'pendingEmail', Value: TEST_MAIL},
-    ]});
+    sinon.stub(sdb, 'getAttributes').yields(null, { Attributes: [
+      { Name: 'pendingEmail', Value: TEST_MAIL },
+    ] });
     sinon.stub(sdb, 'putAttributes').yields(null, { ResponseMetadata: {} });
     sinon.stub(sdb, 'deleteAttributes').yields(null, { ResponseMetadata: {} });
     const manager = new AccountManager(new Db(sdb), null, null, sns, 'topicArn', SESS_PRIV);
 
     const receipt = new Receipt().createConf(ACCOUNT_ID).sign(SESS_PRIV);
     manager.confirmEmail(receipt).then(() => {
-      expect(sdb.getAttributes).calledWith({ DomainName: "ab-accounts", ItemName: ACCOUNT_ID });
+      expect(sdb.getAttributes).calledWith({ DomainName: 'ab-accounts', ItemName: ACCOUNT_ID });
       expect(sdb.putAttributes).calledWith({
         Attributes: [{ Name: 'email', Replace: true, Value: TEST_MAIL }],
         DomainName: 'ab-accounts',
@@ -367,10 +368,10 @@ describe('Account Manager - congfirm email ', () => {
 
 describe('Account Manager - referrals ', () => {
   it('should allow to check referral code.', (done) => {
-    sinon.stub(sdb, 'getAttributes').yields(null, {Attributes: [
+    sinon.stub(sdb, 'getAttributes').yields(null, { Attributes: [
       { Name: 'allowance', Value: '1' },
       { Name: 'account', Value: ACCOUNT_ID },
-    ]});
+    ] });
 
     const manager = new AccountManager(new Db(sdb));
 

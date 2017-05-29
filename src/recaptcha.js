@@ -31,9 +31,7 @@ Recaptcha.prototype.verify = function verify(recapResponse, sourceIp) {
         return reject(new BadRequest(JSON.stringify(res.body)));
       }
       return fulfill();
-    }, (err) => {
-      return reject(new BadRequest(JSON.stringify(err)));
-    });
+    }, err => reject(new BadRequest(JSON.stringify(err))));
   });
 };
 

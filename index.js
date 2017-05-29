@@ -31,10 +31,12 @@ exports.handler = function handler(event, context, callback) {
   const method = event.context['http-method'];
   const topicArn = event['stage-variables'].topicArn;
   const sessionPriv = process.env.SESSION_PRIV;
+  const accountTable = process.env.ACCOUNT_TABLE;
+  const refTable = process.env.REF_TABLE;
 
   let handleRequest;
-  const manager = new AccountManager(new Db(simpledb), new Email(ses),
-    new Recaptcha(recapSecret), new AWS.SNS(), topicArn, sessionPriv);
+  const manager = new AccountManager(new Db(simpledb, accountTable, refTable),
+    new Email(ses), new Recaptcha(recapSecret), new AWS.SNS(), topicArn, sessionPriv);
 
   try {
     if (path.indexOf('confirm') > -1) {

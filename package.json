@@ -46,6 +46,7 @@
     "babel-plugin-transform-builtin-extend": "^1.1.2",
     "babel-runtime": "^6.11.6",
     "buffer-v6-polyfill": "^1.0.3",
+    "ethereumjs-util": "4.5.0",
     "httpinvoke": "^1.4.0",
     "poker-helper": "^0.3.15",
     "querystring": "^0.2.0",

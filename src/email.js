@@ -5,14 +5,14 @@ const welcome = 'Dear customer, \n\nWe have received a request to authorize this
 const reset = 'Dear customer, \n\nWe have received a request to reset the password linked to this email for Acebusters.com. If you requested this reset, please click the following link:';
 const goodbye = 'Sincerely, \n\nThe Acebusters Team';
 
-function sendVerification(ses, email, subject, msg) {
+function sendVerification(ses, email, subjectData, msg) {
   return new Promise((fulfill, reject) => {
     ses.sendEmail({
       Source: fromEmail,
       Destination: { ToAddresses: [email] },
       Message: {
         Subject: {
-          Data: subject,
+          Data: subjectData,
         },
         Body: { Text: {
           Data: msg,

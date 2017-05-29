@@ -26,12 +26,17 @@ const transform = (data) => {
   return attributes;
 };
 
-function Db(sdb) {
+function Db(sdb, accountTable, refTable) {
   this.sdb = sdb;
-  this.domain = 'ab-accounts';
-  this.refDomain = 'ab-refs';
+  this.domain = accountTable;
+  if (typeof this.domain === 'undefined') {
+    this.domain = 'ab-accounts';
+  }
+  this.refDomain = refTable;
+  if (typeof this.refDomain === 'undefined') {
+    this.refDomain = 'ab-refs';
+  }
 }
-
 
 Db.prototype.getAccount = function getAccount(accountId) {
   return new Promise((fulfill, reject) => {
@@ -45,7 +50,7 @@ Db.prototype.getAccount = function getAccount(accountId) {
       if (!data.Attributes) {
         return reject(new NotFound(`Account with ID ${accountId} not found.`));
       }
-      fulfill(transform(data.Attributes));
+      return fulfill(transform(data.Attributes));
     });
   });
 };
@@ -62,7 +67,7 @@ Db.prototype.checkAccountConflict = function checkAccountConflict(accountId, ema
       if (data.Attributes !== undefined) {
         return reject(new Conflict(`account with same Id ${accountId} found.`));
       }
-      fulfill();
+      return fulfill();
     });
   });
   const mailCheck = new Promise((fulfill, reject) => {
@@ -75,7 +80,7 @@ Db.prototype.checkAccountConflict = function checkAccountConflict(accountId, ema
       if (data.Items && data.Items.length > 0) {
         return reject(new Conflict(`email ${email} taken.`));
       }
-      fulfill();
+      return fulfill();
     });
   });
   return Promise.all([idCheck, mailCheck]);
@@ -94,7 +99,7 @@ Db.prototype.getAccountByEmail = function getAccountByEmail(email) {
       }
       const rv = transform(data.Items[0].Attributes);
       rv.id = data.Items[0].Name;
-      fulfill(rv);
+      return fulfill(rv);
     });
   });
 };
@@ -109,7 +114,7 @@ Db.prototype.putAccount = function putAccount(accountId, attributes) {
       if (err) {
         return reject(`Error: ${err}`);
       }
-      fulfill(data);
+      return fulfill(data);
     });
   });
 };
@@ -124,7 +129,7 @@ Db.prototype.setWallet = function setWallet(accountId, wallet) {
       if (err) {
         return reject(`Error: ${err}`);
       }
-      fulfill(data);
+      return fulfill(data);
     });
   });
 };
@@ -139,7 +144,7 @@ Db.prototype.updateEmailComplete = function updateEmailComplete(accountId, email
       if (err) {
         return reject(`Error: ${err}`);
       }
-      fulfill(data);
+      return fulfill(data);
     });
   });
   const del = new Promise((fulfill, reject) => {
@@ -153,7 +158,7 @@ Db.prototype.updateEmailComplete = function updateEmailComplete(accountId, email
       if (err) {
         return reject(`Error: ${err}`);
       }
-      fulfill(data);
+      return fulfill(data);
     });
   });
   return Promise.all([put, del]);
@@ -173,7 +178,7 @@ Db.prototype.getRef = function getRef(refCode) {
       }
       const rv = transform(data.Attributes);
       rv.allowance = parseInt(rv.allowance, 10);
-      fulfill(rv);
+      return fulfill(rv);
     });
   });
 };
@@ -192,7 +197,7 @@ Db.prototype.getRefByAccount = function getRefByAccount(accountId) {
       const rv = transform(data.Items[0].Attributes);
       rv.allowance = parseInt(rv.allowance, 10);
       rv.id = data.Items[0].Name;
-      fulfill(rv);
+      return fulfill(rv);
     });
   });
 };
@@ -207,7 +212,7 @@ Db.prototype.putRef = function putRef(refCode, account, allowance) {
       if (err) {
         return reject(`Error: ${err}`);
       }
-      fulfill(data);
+      return fulfill(data);
     });
   });
 };
@@ -222,7 +227,7 @@ Db.prototype.setRefAllowance = function setRefAllowance(refCode, newAllowance) {
       if (err) {
         return reject(`Error: ${err}`);
       }
-      fulfill(data);
+      return fulfill(data);
     });
   });
 };
