@@ -26,10 +26,10 @@ const handleError = function handleError(err, callback) {
 exports.handler = function handler(event, context, callback) {
   Raven.config(process.env.SENTRY_URL).install();
 
-  const recapSecret = event['stage-variables'].recaptchaSecret;
+  const recapSecret = process.env.RECAPTCHA_SECRET;
   const path = event.context['resource-path'];
   const method = event.context['http-method'];
-  const topicArn = event['stage-variables'].topicArn;
+  const topicArn = process.env.TOPIC_ARN;
   const sessionPriv = process.env.SESSION_PRIV;
   const accountTable = process.env.ACCOUNT_TABLE;
   const refTable = process.env.REF_TABLE;
