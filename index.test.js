@@ -239,7 +239,10 @@ describe('Account Manager - reset request ', () => {
 describe('Account Manager - set Wallet ', () => {
   it('should allow to set Wallet.', (done) => {
     sinon.stub(sns, 'publish').yields(null, {});
-    sinon.stub(sdb, 'getAttributes').yields(null, { Attributes: [] });
+    sinon.stub(sdb, 'getAttributes').yields(null, { Attributes: [
+      { Name: 'id', Value: ACCOUNT_ID },
+      { Name: 'email', Value: 'test@mail.com' },
+    ]});
     sinon.stub(sdb, 'putAttributes').yields(null, { ResponseMetadata: {} });
     const manager = new AccountManager(new Db(sdb), null, null, sns, 'topicArn', SESS_PRIV);
 
@@ -262,7 +265,7 @@ describe('Account Manager - set Wallet ', () => {
       });
       expect(sns.publish).callCount(1);
       expect(sns.publish).calledWith({
-        Message: `{"accountId":"${ACCOUNT_ID}","signerAddr":"${SESS_ADDR}"}`,
+        Message: `{"accountId":"${ACCOUNT_ID}","email":"test@mail.com","signerAddr":"${SESS_ADDR}"}`,
         Subject: `WalletCreated::${SESS_ADDR}`,
         TopicArn: 'topicArn',
       });

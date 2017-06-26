@@ -201,8 +201,10 @@ AccountManager.prototype.setWallet = function setWallet(sessionReceipt, walletSt
   const session = checkSession(sessionReceipt, this.sessionAddr, Type.CREATE_CONF);
   // check data
   const wallet = checkWallet(walletStr);
+  let account;
   // check pending wallet exists
-  return this.db.getAccount(session.accountId).then((account) => {
+  return this.db.getAccount(session.accountId).then((accountRsp) => {
+    account = accountRsp;
     if (account.wallet) {
       throw new Conflict('wallet already set.');
     }
@@ -214,10 +216,12 @@ AccountManager.prototype.setWallet = function setWallet(sessionReceipt, walletSt
     return Promise.all([walletProm, refProm]);
   }).then(() =>
     // notify worker to create contracts
-     this.notify(`WalletCreated::${wallet.address}`, {
-       accountId: session.accountId,
-       signerAddr: wallet.address,
-     }));
+    this.notify(`WalletCreated::${wallet.address}`, {
+      accountId: account.id,
+      email: account.email,
+      signerAddr: wallet.address,
+    })
+  );
 };
 
 AccountManager.prototype.resetWallet = function resetWallet(sessionReceipt, walletStr) {
