@@ -220,7 +220,7 @@ AccountManager.prototype.setWallet = function setWallet(sessionReceipt, walletSt
       accountId: account.id,
       email: account.email,
       signerAddr: wallet.address,
-    })
+    }),
   );
 };
 

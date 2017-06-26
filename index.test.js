@@ -242,7 +242,7 @@ describe('Account Manager - set Wallet ', () => {
     sinon.stub(sdb, 'getAttributes').yields(null, { Attributes: [
       { Name: 'id', Value: ACCOUNT_ID },
       { Name: 'email', Value: 'test@mail.com' },
-    ]});
+    ] });
     sinon.stub(sdb, 'putAttributes').yields(null, { ResponseMetadata: {} });
     const manager = new AccountManager(new Db(sdb), null, null, sns, 'topicArn', SESS_PRIV);
 

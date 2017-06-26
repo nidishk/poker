@@ -27,7 +27,7 @@ function sendVerification(ses, fromEmail, email, subjectData, msg) {
 
 function Email(ses, fromEmail) {
   this.ses = ses;
-  this.fromEmail = (fromEmail) ? fromEmail : 'noreply@acebusters.com';
+  this.fromEmail = (fromEmail) || 'noreply@acebusters.com';
 }
 
 Email.prototype.sendConfirm = function sendConfirm(email, fulfillment, origin) {
