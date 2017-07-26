@@ -313,12 +313,6 @@ describe('Account Manager - reset Wallet ', () => {
         DomainName: 'ab-accounts',
         ItemName: ACCOUNT_ID,
       });
-      expect(sns.publish).callCount(1);
-      expect(sns.publish).calledWith({
-        Message: `{"accountId":"${ACCOUNT_ID}","oldSignerAddr":"0x1234","newSignerAddr":"${SESS_ADDR}"}`,
-        Subject: `WalletReset::${SESS_ADDR}`,
-        TopicArn: 'topicArn',
-      });
       done();
     }).catch(done);
   });

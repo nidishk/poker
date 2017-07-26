@@ -244,13 +244,7 @@ AccountManager.prototype.resetWallet = function resetWallet(sessionReceipt, wall
     }
     // reset wallet
     return this.db.setWallet(session.accountId, walletStr);
-  }).then(() =>
-    // notify worker to send recovery transaction
-     this.notify(`WalletReset::${wallet.address}`, {
-       accountId: session.accountId,
-       oldSignerAddr: existing.address,
-       newSignerAddr: wallet.address,
-     }));
+  });
 };
 
 AccountManager.prototype.confirmEmail = function confirmEmail(sessionReceipt) {
