@@ -208,7 +208,7 @@ describe('Account Manager - reset request ', () => {
     sinon.stub(sdb, 'select').yields(null, { Items: [{ Name: ACCOUNT_ID,
       Attributes: [
       { Name: 'email', Value: TEST_MAIL },
-      { Name: 'wallet', Value: '{}' },
+      { Name: 'wallet', Value: `{ "address": "${SESS_ADDR}" }` },
       ] }] });
     sinon.stub(recaptcha, 'verify').returns(Promise.resolve());
     sinon.stub(ses, 'sendEmail').yields(null, {});
@@ -304,7 +304,7 @@ describe('Account Manager - reset Wallet ', () => {
     sinon.stub(sdb, 'putAttributes').yields(null, { ResponseMetadata: {} });
     const manager = new AccountManager(new Db(sdb), null, null, sns, 'topicArn', SESS_PRIV);
 
-    const receipt = new Receipt().resetConf(ACCOUNT_ID).sign(SESS_PRIV);
+    const receipt = new Receipt().resetConf(ACCOUNT_ID, SESS_ADDR).sign(SESS_PRIV);
     const wallet = `{ "address": "${SESS_ADDR}" }`;
     manager.resetWallet(receipt, wallet).then(() => {
       expect(sdb.getAttributes).calledWith({ DomainName: 'ab-accounts', ItemName: ACCOUNT_ID });
