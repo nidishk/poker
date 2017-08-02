@@ -148,27 +148,24 @@ AccountManager.prototype.queryAccount = function queryAccount(email) {
   return this.db.getAccountByEmail(email).then(account => Promise.resolve(account));
 };
 
-AccountManager.prototype.queryUnlockReceipt = async function queryUnlockReceipt(
-  createConf,
-  injectedAddr,
-) {
+AccountManager.prototype.queryUnlockReceipt = async function queryUnlockReceipt(unlockRequest) {
   try {
-    const createConfReceipt = Receipt.parse(createConf);
-    const dbAcc = await this.db.getAccount(createConfReceipt.accountId);
-    const wallet = JSON.parse(dbAcc.wallet);
-    if (wallet.address === createConfReceipt.signer) {
-      const account = await this.factory.getAccount(createConfReceipt.signer);
-      if (account.proxy !== '0x') {
-        const receipt = new Receipt(account.proxy)
-                        .unlock(injectedAddr)
-                        .sign('0x94890218f2b0d04296f30aeafd13655eba4c5bbf1770273276fee52cbe3f2cb4');
-        return receipt;
-      }
+    const unlockRequestReceipt = Receipt.parse(unlockRequest);
+    const secsFromCreated = Math.floor(Date.now() / 1000) - unlockRequestReceipt.created;
+    const account = await this.factory.getAccount(unlockRequestReceipt.signer);
 
-      throw new BadRequest(`Proxy for ${createConfReceipt.signer} doesn't exist`);
-    } else {
-      throw new BadRequest('Wrong signer of receipt');
+    if (secsFromCreated > 600) {
+      throw new BadRequest('Receipt is outdated');
     }
+
+    if (account.proxy !== '0x') {
+      const receipt = new Receipt(account.proxy)
+                      .unlock(unlockRequestReceipt.newOwner)
+                      .sign('0x94890218f2b0d04296f30aeafd13655eba4c5bbf1770273276fee52cbe3f2cb4');
+      return receipt;
+    }
+
+    throw new BadRequest(`Proxy for ${unlockRequestReceipt.signer} doesn't exist`);
   } catch (e) {
     throw e;
   }

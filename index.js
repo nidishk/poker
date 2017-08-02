@@ -94,10 +94,7 @@ exports.handler = function handler(event, context, callback) {
         );
       }
     } else if (path.indexOf('unlock') > -1) {
-      handleRequest = manager.queryUnlockReceipt(
-        event.params.createConf,
-        event.params.injectedAddr,
-      );
+      handleRequest = manager.queryUnlockReceipt(event.params.path.unlockRequest);
     }
     if (typeof handleRequest === 'undefined') {
       handleRequest = Promise.reject(`Not Found: unexpected path: ${path}`);
