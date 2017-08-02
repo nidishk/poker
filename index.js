@@ -1,8 +1,10 @@
 import AWS from 'aws-sdk';
 import Raven from 'raven';
+import Web3 from 'web3';
 import Db from './src/db';
 import Email from './src/email';
 import Recaptcha from './src/recaptcha';
+import Factory from './src/factoryContract';
 import AccountManager from './src/index';
 
 const simpledb = new AWS.SimpleDB();
@@ -23,8 +25,17 @@ const handleError = function handleError(err, callback) {
   });
 };
 
+let web3Provider;
+
 exports.handler = function handler(event, context, callback) {
   Raven.config(process.env.SENTRY_URL).install();
+
+  let web3;
+  if (!web3Provider) {
+    web3 = new Web3();
+    web3Provider = new web3.providers.HttpProvider(process.env.PROVIDER_URL);
+  }
+  web3 = new Web3(web3Provider);
 
   const recapSecret = process.env.RECAPTCHA_SECRET;
   const path = event.context['resource-path'];
@@ -32,12 +43,20 @@ exports.handler = function handler(event, context, callback) {
   const topicArn = process.env.TOPIC_ARN;
   const sessionPriv = process.env.SESSION_PRIV;
   const accountTable = process.env.ACCOUNT_TABLE;
+  const factory = new Factory(web3, process.env.FACTORY_ADDR);
   const refTable = process.env.REF_TABLE;
   const fromEmail = process.env.FROM_EMAIL;
 
   let handleRequest;
-  const manager = new AccountManager(new Db(simpledb, accountTable, refTable),
-    new Email(ses, fromEmail), new Recaptcha(recapSecret), new AWS.SNS(), topicArn, sessionPriv);
+  const manager = new AccountManager(
+    new Db(simpledb, accountTable, refTable),
+    new Email(ses, fromEmail),
+    new Recaptcha(recapSecret),
+    new AWS.SNS(),
+    topicArn,
+    sessionPriv,
+    factory,
+  );
 
   try {
     if (path.indexOf('confirm') > -1) {
@@ -74,6 +93,11 @@ exports.handler = function handler(event, context, callback) {
           event.refCode,
         );
       }
+    } else if (path.indexOf('unlock') > -1) {
+      handleRequest = manager.queryUnlockReceipt(
+        event.params.createConf,
+        event.params.injectedAddr,
+      );
     }
     if (typeof handleRequest === 'undefined') {
       handleRequest = Promise.reject(`Not Found: unexpected path: ${path}`);

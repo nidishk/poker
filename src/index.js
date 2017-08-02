@@ -84,11 +84,12 @@ function checkWallet(walletStr) {
   return wallet;
 }
 
-function AccountManager(db, email, recaptcha, sns, topicArn, sessionPriv) {
+function AccountManager(db, email, recaptcha, sns, topicArn, sessionPriv, factory) {
   this.db = db;
   this.email = email;
   this.recaptcha = recaptcha;
   this.sns = sns;
+  this.factory = factory;
   this.topicArn = topicArn;
   if (sessionPriv) {
     this.sessionPriv = sessionPriv;
@@ -145,6 +146,32 @@ AccountManager.prototype.getRef = function getRef(refCode) {
 
 AccountManager.prototype.queryAccount = function queryAccount(email) {
   return this.db.getAccountByEmail(email).then(account => Promise.resolve(account));
+};
+
+AccountManager.prototype.queryUnlockReceipt = async function queryUnlockReceipt(
+  createConf,
+  injectedAddr,
+) {
+  try {
+    const createConfReceipt = Receipt.parse(createConf);
+    const dbAcc = await this.db.getAccount(createConfReceipt.accountId);
+    const wallet = JSON.parse(dbAcc.wallet);
+    if (wallet.address === createConfReceipt.signer) {
+      const account = await this.factory.getAccount(createConfReceipt.signer);
+      if (account.proxy !== '0x') {
+        const receipt = new Receipt(account.proxy)
+                        .unlock(injectedAddr)
+                        .sign('0x94890218f2b0d04296f30aeafd13655eba4c5bbf1770273276fee52cbe3f2cb4');
+        return receipt;
+      }
+
+      throw new BadRequest(`Proxy for ${createConfReceipt.signer} doesn't exist`);
+    } else {
+      throw new BadRequest('Wrong signer of receipt');
+    }
+  } catch (e) {
+    throw e;
+  }
 };
 
 AccountManager.prototype.addAccount = function addAccount(accountId,
