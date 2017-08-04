@@ -6,7 +6,7 @@ import { BadRequest, Unauthorized, Forbidden, Conflict, EnhanceYourCalm, Teapot 
 const timeout = 2; // hours <- timeout for email verification
 const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const refRegex = /^[0-9a-f]{8}$/i;
-const emailRegex = /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
+const emailRegex = /^(([^<>()[\]\\.,;:\s@']+(\.[^<>()[\]\\.,;:\s@']+)*)|('.+'))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
 
 /**
  * Checks if the given string is a checksummed address
@@ -145,7 +145,29 @@ AccountManager.prototype.getRef = function getRef(refCode) {
 };
 
 AccountManager.prototype.queryAccount = function queryAccount(email) {
-  return this.db.getAccountByEmail(email).then(account => Promise.resolve(account));
+  return this.db.getAccountByEmail(email).then(
+    account => account.wallet,
+    () => JSON.stringify({
+      address: `0x${ethUtil.sha3(`${email}${'addressawobeqw4cq'}`).slice(0, 20).toString('hex')}`,
+      Crypto: {
+        cipher: 'aes-128-ctr',
+        cipherparams: {
+          iv: ethUtil.sha3(`${email}${'cipherparamsivaic4w6b'}`).slice(0, 16).toString('hex'),
+        },
+        ciphertext: ethUtil.sha3(`${email}${'ciphertextaoc84noq354'}`).slice(0, 32).toString('hex'),
+        kdf: 'scrypt',
+        kdfparams: {
+          dklen: 32,
+          n: 65536,
+          r: 1,
+          p: 8,
+          salt: ethUtil.sha3(`${email}${'kdfparamssalta7c465oa754'}`).slice(0, 32).toString('hex'),
+        },
+        mac: ethUtil.sha3(`${email}${'maco8wb47q5496q38745'}`).slice(0, 32).toString('hex'),
+      },
+      version: 3,
+    }),
+  );
 };
 
 AccountManager.prototype.queryUnlockReceipt = async function queryUnlockReceipt(unlockRequest) {
