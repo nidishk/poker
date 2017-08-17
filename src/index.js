@@ -232,13 +232,19 @@ AccountManager.prototype.addAccount = function addAccount(accountId,
 
 AccountManager.prototype.resetRequest = function resetRequest(email,
   recapResponse, origin, sourceIp) {
-  const accountProm = this.db.getAccountByEmail(email);
   const captchaProm = this.recaptcha.verify(recapResponse, sourceIp);
-  return Promise.all([accountProm, captchaProm]).then(([account]) => {
-    const wallet = JSON.parse(account.wallet);
-    const receipt = new Receipt().resetConf(account.id, wallet.address).sign(this.sessionPriv);
-    return this.email.sendReset(email, receipt, origin);
-  });
+  return captchaProm.then(
+    () => this.db.getAccountByEmail(email),
+    err => Promise.reject(err),
+  ).then(
+    (account) => {
+      const wallet = JSON.parse(account.wallet);
+      const receipt = new Receipt().resetConf(account.id, wallet.address).sign(this.sessionPriv);
+      return this.email.sendReset(email, receipt, origin)
+                .then(() => undefined); // do not send any data to client
+    },
+    () => Promise.resolve(),
+  );
 };
 
 AccountManager.prototype.setWallet = function setWallet(sessionReceipt, walletStr) {

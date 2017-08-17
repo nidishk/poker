@@ -225,6 +225,30 @@ describe('Account Manager - reset request ', () => {
     }).catch(done);
   });
 
+  it('should respond with success when email not found.', async () => {
+    sinon.stub(sdb, 'select').yields(null, {});
+    sinon.stub(recaptcha, 'verify').returns(Promise.resolve());
+    sinon.stub(ses, 'sendEmail').yields(null, {});
+    const manager = new AccountManager(new Db(sdb),
+      new Email(ses), recaptcha, null, null, SESS_PRIV);
+
+    await manager.resetRequest(TEST_MAIL, {});
+  });
+
+  it('should fail when captcha is not verified.', async () => {
+    sinon.stub(sdb, 'select').yields(null, {});
+    sinon.stub(recaptcha, 'verify').returns(Promise.reject('Wrong captcha'));
+    sinon.stub(ses, 'sendEmail').yields(null, {});
+    const manager = new AccountManager(new Db(sdb),
+      new Email(ses), recaptcha, null, null, SESS_PRIV);
+
+    try {
+      await manager.resetRequest(TEST_MAIL, {});
+    } catch (e) {
+      expect(e).eq('Wrong captcha');
+    }
+  });
+
   afterEach(() => {
     if (sdb.getAttributes.restore) sdb.getAttributes.restore();
     if (sdb.putAttributes.restore) sdb.putAttributes.restore();
