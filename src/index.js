@@ -193,7 +193,7 @@ AccountManager.prototype.queryUnlockReceipt = async function queryUnlockReceipt(
   }
 };
 
-AccountManager.prototype.addAccount = function addAccount(accountId,
+AccountManager.prototype.addAccount = async function addAccount(accountId,
   email, recapResponse, origin, sourceIp, refCode) {
   if (!uuidRegex.test(accountId)) {
     throw new BadRequest(`passed accountId ${accountId} not uuid v4.`);
@@ -206,28 +206,31 @@ AccountManager.prototype.addAccount = function addAccount(accountId,
   }
   const receipt = new Receipt().createConf(accountId).sign(this.sessionPriv);
 
-  const conflictProm = this.db.checkAccountConflict(accountId, email);
-  const captchaProm = this.recaptcha.verify(recapResponse, sourceIp);
-  const refProm = this.db.getRef(refCode);
-  return Promise.all([conflictProm, captchaProm, refProm]).then((rsp) => {
-    const referral = rsp[2];
-    if (referral.allowance < 1) {
-      // 418 - invite limit for this code reached
-      throw new Teapot('referral invite limit reached.');
-    }
+  const [referral] = await Promise.all([
+    this.db.getRef(refCode),
+    this.recaptcha.verify(recapResponse, sourceIp),
+  ]);
 
-    if (!uuidRegex.test(referral.account)) {
-      throw new BadRequest(`passed refCode ${refCode} can not be used for signup.`);
-    }
-    const now = new Date().toString();
-    const putAccProm = this.db.putAccount(accountId, {
-      created: [now],
+  if (referral.allowance < 1) {
+    // 418 - invite limit for this code reached
+    throw new Teapot('referral invite limit reached.');
+  }
+
+  if (!uuidRegex.test(referral.account)) {
+    throw new BadRequest(`passed refCode ${refCode} can not be used for signup.`);
+  }
+
+  await this.db.checkAccountConflict(accountId, email);
+  await Promise.all([
+    this.db.putAccount(accountId, {
+      created: [new Date().toString()],
       pendingEmail: [email],
       referral: [referral.account],
-    });
-    const refAllowProm = this.db.setRefAllowance(refCode, referral.allowance - 1);
-    return Promise.all([putAccProm, refAllowProm]);
-  }).then(() => this.email.sendConfirm(email, receipt, origin));
+    }),
+    this.db.setRefAllowance(refCode, referral.allowance - 1),
+  ]);
+
+  return this.email.sendConfirm(email, receipt, origin);
 };
 
 AccountManager.prototype.resetRequest = function resetRequest(email,

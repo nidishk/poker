@@ -38,11 +38,11 @@ const SESS_ADDR = '0x82e8c6cf42c8d1ff9594b17a3f50e94a12cc860f';
 const SESS_PRIV = '0x94890218f2b0d04296f30aeafd13655eba4c5bbf1770273276fee52cbe3f2cb4';
 
 
-describe('Account Manager - add account ', () => {
-  it('should fail adding account on invalid uuid.', () => {
+describe('Account Manager - add account', () => {
+  it('should fail adding account on invalid uuid.', async () => {
     const manager = new AccountManager(new Db({}));
     try {
-      manager.addAccount('123', TEST_MAIL, {});
+      await manager.addAccount('123', TEST_MAIL, {});
     } catch (err) {
       expect(err.message).to.contain('Bad Request: ');
       return;
@@ -50,10 +50,10 @@ describe('Account Manager - add account ', () => {
     throw new Error('should have thrown');
   });
 
-  it('should reject invalid email.', () => {
+  it('should reject invalid email.', async () => {
     const manager = new AccountManager(new Db({}));
     try {
-      manager.addAccount(ACCOUNT_ID, 'email@email', {});
+      await manager.addAccount(ACCOUNT_ID, 'email@email', {});
     } catch (err) {
       expect(err.message).to.contain('email');
       return;
@@ -62,7 +62,11 @@ describe('Account Manager - add account ', () => {
   });
 
   it('should fail on key conflict.', (done) => {
-    sinon.stub(sdb, 'getAttributes').yields(null, { Attributes: [] });
+    sinon.stub(sdb, 'getAttributes').yields(null, {
+      Attributes: [
+      { Name: 'allowance', Value: ['1'] },
+      { Name: 'account', Value: [ACCOUNT_ID] },
+      ] });
     sinon.stub(sdb, 'select').yields(null, {});
     sinon.stub(recaptcha, 'verify').returns(Promise.resolve());
 
@@ -87,11 +91,12 @@ describe('Account Manager - add account ', () => {
     }).catch(done);
   });
 
-  it('should prevent to add existing email.', (done) => {
-    sinon.stub(sdb, 'getAttributes').yields(null, {
+  it('should prevent to add existing email.', async () => {
+    sinon.stub(sdb, 'getAttributes').yields(null, {}).onFirstCall().yields(null, {
       Attributes: [
       { Name: 'allowance', Value: ['1'] },
-      ] }).onFirstCall().yields(null, {});
+      { Name: 'account', Value: [ACCOUNT_ID] },
+      ] });
     sinon.stub(sdb, 'select').yields(null, { Items: [{ Name: '123',
       Attributes: [
       { Name: 'Email', Value: TEST_MAIL },
@@ -100,18 +105,20 @@ describe('Account Manager - add account ', () => {
 
     const manager = new AccountManager(new Db(sdb), null, recaptcha, null, null, SESS_PRIV);
 
-    manager.addAccount(ACCOUNT_ID, TEST_MAIL, {}, null, null, globalRef).catch((err) => {
+    try {
+      await manager.addAccount(ACCOUNT_ID, TEST_MAIL, {}, null, null, globalRef);
+    } catch (err) {
       expect(err.message).to.contain('Conflict: ');
       expect(err.message).to.contain(TEST_MAIL);
-      done();
-    }).catch(done);
+    }
   });
 
-  it('should prevent to add existing pending email.', (done) => {
-    sinon.stub(sdb, 'getAttributes').yields(null, {
+  it('should prevent to add existing pending email.', async () => {
+    sinon.stub(sdb, 'getAttributes').yields(null, {}).onFirstCall().yields(null, {
       Attributes: [
       { Name: 'allowance', Value: ['1'] },
-      ] }).onFirstCall().yields(null, {});
+      { Name: 'account', Value: [ACCOUNT_ID] },
+      ] });
     sinon.stub(sdb, 'select').yields(null, { Items: [{ Name: '123',
       Attributes: [
       { Name: 'pendingEmail', Value: TEST_MAIL },
@@ -120,52 +127,55 @@ describe('Account Manager - add account ', () => {
 
     const manager = new AccountManager(new Db(sdb), null, recaptcha, null, null, SESS_PRIV);
 
-    manager.addAccount(ACCOUNT_ID, TEST_MAIL, {}, null, null, globalRef).catch((err) => {
+    try {
+      await manager.addAccount(ACCOUNT_ID, TEST_MAIL, {}, null, null, globalRef);
+    } catch (err) {
       expect(err.message).to.contain('Conflict: ');
       expect(err.message).to.contain(TEST_MAIL);
-      done();
-    }).catch(done);
+    }
   });
 
-  it('should prevent to signup when ref limit reached.', (done) => {
-    sinon.stub(sdb, 'getAttributes').yields(null, {
+  it('should prevent to signup when ref limit reached.', async () => {
+    sinon.stub(sdb, 'getAttributes').yields(null, {}).onFirstCall().yields(null, {
       Attributes: [
       { Name: 'allowance', Value: ['0'] },
-      ] }).onFirstCall().yields(null, {});
+      ] });
     sinon.stub(sdb, 'select').yields(null, { Items: [] });
     sinon.stub(recaptcha, 'verify').returns(Promise.resolve());
 
     const manager = new AccountManager(new Db(sdb), null, recaptcha, null, null, SESS_PRIV);
 
-    manager.addAccount(ACCOUNT_ID, TEST_MAIL, {}, null, null, globalRef).catch((err) => {
+    try {
+      await manager.addAccount(ACCOUNT_ID, TEST_MAIL, {}, null, null, globalRef);
+    } catch (err) {
       expect(err.message).to.contain('Teapot: ');
-      done();
-    }).catch(done);
+    }
   });
 
-  it('should prevent to signup global ref, if deactivated.', (done) => {
-    sinon.stub(sdb, 'getAttributes').yields(null, {
+  it('should prevent to signup global ref, if deactivated.', async () => {
+    sinon.stub(sdb, 'getAttributes').yields(null, {}).onFirstCall().yields(null, {
       Attributes: [
       { Name: 'allowance', Value: ['1'] },
       { Name: 'account', Value: ['-'] },
-      ] }).onFirstCall().yields(null, {});
+      ] });
     sinon.stub(sdb, 'select').yields(null, { Items: [] });
     sinon.stub(recaptcha, 'verify').returns(Promise.resolve());
 
     const manager = new AccountManager(new Db(sdb), null, recaptcha, null, null, SESS_PRIV);
 
-    manager.addAccount(ACCOUNT_ID, TEST_MAIL, {}, null, null, globalRef).catch((err) => {
+    try {
+      await manager.addAccount(ACCOUNT_ID, TEST_MAIL, {}, null, null, globalRef);
+    } catch (err) {
       expect(err.message).to.contain('Bad Request: passed refCode 00000000');
-      done();
-    }).catch(done);
+    }
   });
 
   it('should allow to add account.', (done) => {
-    sinon.stub(sdb, 'getAttributes').yields(null, {
+    sinon.stub(sdb, 'getAttributes').yields(null, {}).onFirstCall().yields(null, {
       Attributes: [
       { Name: 'allowance', Value: ['1'] },
       { Name: 'account', Value: [ACCOUNT_ID] },
-      ] }).onFirstCall().yields(null, {});
+      ] });
     sinon.stub(sdb, 'select').yields(null, {});
     sinon.stub(sdb, 'putAttributes').yields(null, { ResponseMetadata: {} });
     sinon.stub(recaptcha, 'verify').returns(Promise.resolve());
