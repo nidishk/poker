@@ -84,12 +84,13 @@ function checkWallet(walletStr) {
   return wallet;
 }
 
-function AccountManager(db, email, recaptcha, sns, topicArn, sessionPriv, factory) {
+function AccountManager(db, email, recaptcha, sns, topicArn, sessionPriv, factory, proxy) {
   this.db = db;
   this.email = email;
   this.recaptcha = recaptcha;
   this.sns = sns;
   this.factory = factory;
+  this.proxy = proxy;
   this.topicArn = topicArn;
   if (sessionPriv) {
     this.sessionPriv = sessionPriv;
@@ -142,6 +143,23 @@ AccountManager.prototype.getRef = function getRef(refCode) {
     // users without ref code will not be able to sign up
     return Promise.resolve({});
   });
+};
+
+AccountManager.prototype.forward = function forward(forwardReceipt, resetConfReceipt) {
+  try {
+    const receipt = Receipt.parse(forwardReceipt);
+    const resetReceipt = resetConfReceipt && Receipt.parse(resetConfReceipt);
+    const signerAddr = resetReceipt ? resetReceipt.oldSignerAddr : receipt.signer;
+    return this.factory.getAccount(signerAddr).then((account) => {
+      if (account.owner !== this.proxy.senderAddr) {
+        throw new BadRequest(`wrong owner ${account.owner} found on poxy ${account.proxy}`);
+      }
+      return this.proxy.forward(account.proxy, receipt.destinationAddr,
+        receipt.amount, receipt.data, signerAddr);
+    }).then(rsp => Promise.resolve(rsp[0]));
+  } catch (e) {
+    return Promise.reject(`Bad Request: ${e}`);
+  }
 };
 
 AccountManager.prototype.queryAccount = function queryAccount(email) {

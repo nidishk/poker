@@ -5,6 +5,7 @@ import Db from './src/db';
 import Email from './src/email';
 import Recaptcha from './src/recaptcha';
 import Factory from './src/factoryContract';
+import ProxyContr from './src/proxyContract';
 import AccountManager from './src/index';
 
 const simpledb = new AWS.SimpleDB();
@@ -44,6 +45,7 @@ exports.handler = function handler(event, context, callback) {
   const sessionPriv = process.env.SESSION_PRIV;
   const accountTable = process.env.ACCOUNT_TABLE;
   const factory = new Factory(web3, process.env.FACTORY_ADDR);
+  const proxy = new ProxyContr(web3, process.env.SENDER_ADDR, new AWS.SQS(), process.env.QUEUE_URL);
   const refTable = process.env.REF_TABLE;
   const fromEmail = process.env.FROM_EMAIL;
 
@@ -56,6 +58,7 @@ exports.handler = function handler(event, context, callback) {
     topicArn,
     sessionPriv,
     factory,
+    proxy,
   );
 
   try {
@@ -97,6 +100,8 @@ exports.handler = function handler(event, context, callback) {
       handleRequest = manager.queryUnlockReceipt(
         decodeURIComponent(event.params.path.unlockRequest),
       );
+    } else if (path.indexOf('forward') > -1) {
+      handleRequest = manager.forward(event.forwardReceipt, event.resetConfReceipt);
     }
     if (typeof handleRequest === 'undefined') {
       handleRequest = Promise.reject(`Not Found: unexpected path: ${path}`);

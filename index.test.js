@@ -6,12 +6,16 @@ import { Receipt } from 'poker-helper';
 import Db from './src/db';
 import Email from './src/email';
 import AccountManager from './src/index';
+import Factory from './src/factoryContract';
+import ProxyContr from './src/proxyContract';
 import { BadRequest } from './src/errors';
-
 
 chai.use(sinonChai);
 
 const globalRef = '00000000';
+const EMPTY = '0x';
+const ADDR1 = '0xe10f3d125e5f4c753a6456fc37123cf17c6900f2';
+const ADDR2 = '0xc3ccb3902a164b83663947aff0284c6624f3fbf2';
 
 const sdb = {
   getAttributes() {},
@@ -36,6 +40,28 @@ const ACCOUNT_ID = '357e44ed-bd9a-4370-b6ca-8de9847d1da8';
 const TEST_MAIL = 'test@mail.com';
 const SESS_ADDR = '0x82e8c6cf42c8d1ff9594b17a3f50e94a12cc860f';
 const SESS_PRIV = '0x94890218f2b0d04296f30aeafd13655eba4c5bbf1770273276fee52cbe3f2cb4';
+
+const sqs = {
+  sendMessage() {},
+};
+
+const contract = {
+  forward: {
+    getData() {},
+    estimateGas() {},
+  },
+  getAccount: {
+    call() {},
+  },
+};
+
+const web3 = { eth: {
+  contract() {},
+  at() {},
+} };
+
+sinon.stub(web3.eth, 'contract').returns(web3.eth);
+sinon.stub(web3.eth, 'at', address => ({ ...contract, address }));
 
 
 describe('Account Manager - add account', () => {
@@ -539,5 +565,102 @@ describe('Account Manager - referrals ', () => {
     if (sdb.getAttributes.restore) sdb.getAttributes.restore();
     if (sdb.putAttributes.restore) sdb.putAttributes.restore();
     if (sdb.select.restore) sdb.select.restore();
+  });
+});
+
+
+describe('Transaction forwarding', () => {
+  it('should error on invalid receipt.', (done) => {
+    const invalidReceipt = 'M4YP.q2nMwonzSBctgq6qrQP9R6t/4xWjUIp5a+QnbQyd+U0=.V2RkK7APB5zIwVA0SGFnQRhPO/gEEnLdCdGG+bYrjKo=.G93u/wARIjMAAAAOgujGz0LI0f+VlLF6P1DpShLMhg8=.AAAAAAAAAAABBBAAAAAAAAAAAAAAAAAAAAAAAAAB1MA=.ESIzRA==';
+
+    new AccountManager().forward(invalidReceipt).catch((err) => {
+      expect(err).to.contain('Bad Request: ');
+      done();
+    }).catch(done);
+  });
+
+  it('should handle non existing signer in factory.', async () => {
+    const forwardReceipt = 'M4YP.q2nMwonzSBctgq6qrQP9R6t/4xWjUIp5a+QnbQyd+U0=.V2RkK7APB5zIwVA0SGFnQRhPO/gEEnLdCdGG+bYrjKo=.G93u/wARIjMAAAAOgujGz0LI0f+VlLF6P1DpShLMhg8=.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB1MA=.ESIzRA==';
+    sinon.stub(contract.getAccount, 'call').yields(null, [EMPTY, EMPTY, false]);
+    const factory = new Factory(web3, '0x1255', sqs, 'url');
+    const proxy = new ProxyContr(web3, '0x1255', sqs, 'url');
+    const manager = new AccountManager(null, null, null, null, null, null, factory, proxy);
+
+    try {
+      await manager.forward(forwardReceipt);
+    } catch (err) {
+      expect(err.message).to.contain('Not Found: ');
+      expect(err.message).to.contain('no proxy');
+    }
+  });
+
+  it('should fail on wrong owner.', async () => {
+    const forwardReceipt = 'M4YP.q2nMwonzSBctgq6qrQP9R6t/4xWjUIp5a+QnbQyd+U0=.V2RkK7APB5zIwVA0SGFnQRhPO/gEEnLdCdGG+bYrjKo=.G93u/wARIjMAAAAOgujGz0LI0f+VlLF6P1DpShLMhg8=.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB1MA=.ESIzRA==';
+    sinon.stub(contract.getAccount, 'call').yields(null, [ADDR1, ADDR1, true]);
+    const factory = new Factory(web3, '0x1255', sqs, 'url');
+    const proxy = new ProxyContr(web3, '0x1255', sqs, 'url');
+    const manager = new AccountManager(null, null, null, null, null, null, factory, proxy);
+
+    try {
+      await manager.forward(forwardReceipt);
+    } catch (err) {
+      expect(err.message).to.contain('Bad Request: ');
+      expect(err.message).to.contain('wrong owner');
+    }
+  });
+
+  it('should fail on unlocked account.', async () => {
+    const forwardReceipt = 'M4YP.q2nMwonzSBctgq6qrQP9R6t/4xWjUIp5a+QnbQyd+U0=.V2RkK7APB5zIwVA0SGFnQRhPO/gEEnLdCdGG+bYrjKo=.G93u/wARIjMAAAAOgujGz0LI0f+VlLF6P1DpShLMhg8=.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB1MA=.ESIzRA==';
+    sinon.stub(contract.getAccount, 'call').yields(null, [ADDR1, EMPTY, false]);
+    const factory = new Factory(web3, '0x1255', sqs, 'url');
+    const proxy = new ProxyContr(web3, '0x1255', sqs, 'url');
+    const manager = new AccountManager(null, null, null, null, null, null, factory, proxy);
+
+    try {
+      await manager.forward(forwardReceipt);
+    } catch (err) {
+      expect(err.message).to.contain('Bad Request: ');
+      expect(err.message).to.contain('unlocked');
+    }
+  });
+
+  it('should handle error in tx send.', (done) => {
+    const forwardReceipt = 'M4YP.q2nMwonzSBctgq6qrQP9R6t/4xWjUIp5a+QnbQyd+U0=.V2RkK7APB5zIwVA0SGFnQRhPO/gEEnLdCdGG+bYrjKo=.G93u/wARIjMAAAAOgujGz0LI0f+VlLF6P1DpShLMhg8=.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB1MA=.ESIzRA==';
+    sinon.stub(contract.getAccount, 'call').yields(null, [ADDR1, ADDR2, true]);
+    sinon.stub(contract.forward, 'estimateGas').yields(null, 80000000);
+    const factory = new Factory(web3, ADDR2, sqs, 'url');
+    const proxy = new ProxyContr(web3, ADDR2, sqs, 'url');
+    const manager = new AccountManager(null, null, null, null, null, null, factory, proxy);
+
+    manager.forward(forwardReceipt).catch((err) => {
+      expect(err).to.contain('Error: ');
+      done();
+    }).catch(done);
+  });
+
+  it('should allow to send tx.', (done) => {
+    const forwardReceipt = 'M3H7.MNZGDLtAeTTotcF1RaTQC9yxTG1v872In6Gsya76od8=.KFBvWNlOMlaQ4Ig2S8d7cC4sBru9Vrg7H2vcdoCKyhM=.G8vPm8PCpXAAAAAJ+MBn16c2YEpuxSOND1mmlhVVaEI=.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=.koQ4zQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB9AAAAAAAAAAAAAAAAAA+SccfDWbn6bznUytzcR/sW8cfsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABA==';
+    sinon.stub(contract.getAccount, 'call').yields(null, [ADDR1, ADDR2, true]);
+    sinon.stub(contract.forward, 'getData').returns('0x112233');
+    sinon.stub(contract.forward, 'estimateGas').yields(null, 100000);
+    sinon.stub(sqs, 'sendMessage').yields(null, {});
+    const factory = new Factory(web3, ADDR2, sqs, 'url');
+    const proxy = new ProxyContr(web3, ADDR2, sqs, 'url');
+    const manager = new AccountManager(null, null, null, null, null, null, factory, proxy);
+
+    manager.forward(forwardReceipt).then(() => {
+      expect(sqs.sendMessage).calledWith({
+        MessageBody: `{"from":"${ADDR2}","to":"${ADDR1}","gas":120000,"data":"0x112233","signerAddr":"0x03e49c71f0d66e7e9bce7532b73711fec5bc71fb"}`,
+        MessageGroupId: 'someGroup',
+        QueueUrl: 'url',
+      }, sinon.match.any);
+      done();
+    }).catch(done);
+  });
+
+  afterEach(() => {
+    if (contract.forward.estimateGas.restore) contract.forward.estimateGas.restore();
+    if (contract.getAccount.call.restore) contract.getAccount.call.restore();
+    if (sqs.sendMessage.restore) sqs.sendMessage.restore();
   });
 });
