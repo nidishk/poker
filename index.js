@@ -86,6 +86,8 @@ exports.handler = function handler(event, context, callback) {
       }
     } else if (path.indexOf('referral') > -1) {
       handleRequest = manager.getRef(event.params.path.refCode);
+    } else if (path.indexOf('refs') > -1) {
+      handleRequest = manager.queryRefCodes(event.params.path.accountId);
     } else if (path.indexOf('account') > -1) {
       if (method === 'GET') {
         handleRequest = manager.getAccount(event.params.path.accountId);

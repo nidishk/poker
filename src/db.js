@@ -183,21 +183,28 @@ Db.prototype.getRef = function getRef(refCode) {
   });
 };
 
-Db.prototype.getRefByAccount = function getRefByAccount(accountId) {
+Db.prototype.getRefsByAccount = function getRefsByAccount(accountId) {
   return new Promise((fulfill, reject) => {
     this.sdb.select({
-      SelectExpression: `select * from \`${this.refDomain}\` where account =  "${accountId}" limit 1`,
+      SelectExpression: `select * from \`${this.refDomain}\` where account = "${accountId}"`,
     }, (err, data) => {
       if (err) {
         return reject(`Error: ${err}`);
       }
+
       if (!data.Items || data.Items.length === 0) {
         return reject(new NotFound(`accountId ${accountId} unknown.`));
       }
-      const rv = transform(data.Items[0].Attributes);
-      rv.allowance = parseInt(rv.allowance, 10);
-      rv.id = data.Items[0].Name;
-      return fulfill(rv);
+
+      return fulfill(
+        data.Items.map((item) => {
+          const attributes = transform(item.Attributes);
+          return {
+            allowance: Number(attributes.allowance),
+            id: item.Name,
+          };
+        }),
+      );
     });
   });
 };

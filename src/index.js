@@ -8,6 +8,19 @@ const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[
 const refRegex = /^[0-9a-f]{8}$/i;
 const emailRegex = /^(([^<>()[\]\\.,;:\s@']+(\.[^<>()[\]\\.,;:\s@']+)*)|('.+'))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
 
+function fakeId(email) {
+  const hash = ethUtil.sha3(`${email}${'fakeid[405723v5'}`).toString('hex');
+  const p1 = hash.slice(0, 8);
+  const p2 = hash.slice(8, 12);
+  const p3 = hash.match(/[1-5]/)[0];
+  const p4 = hash.slice(12, 15);
+  const p5 = hash.match(/[89ab]/)[0];
+  const p6 = hash.slice(15, 18);
+  const p7 = hash.slice(18, 30);
+
+  return `${p1}-${p2}-${p3}${p4}-${p5}${p6}-${p7}`;
+}
+
 /**
  * Checks if the given string is a checksummed address
  *
@@ -162,28 +175,38 @@ AccountManager.prototype.forward = function forward(forwardReceipt, resetConfRec
   }
 };
 
+AccountManager.prototype.queryRefCodes = function queryRefCodes(accountId) {
+  return this.db.getRefsByAccount(accountId);
+};
+
 AccountManager.prototype.queryAccount = function queryAccount(email) {
   return this.db.getAccountByEmail(email).then(
-    account => account.wallet,
-    () => JSON.stringify({
-      address: `0x${ethUtil.sha3(`${email}${'addressawobeqw4cq'}`).slice(0, 20).toString('hex')}`,
-      Crypto: {
-        cipher: 'aes-128-ctr',
-        cipherparams: {
-          iv: ethUtil.sha3(`${email}${'cipherparamsivaic4w6b'}`).slice(0, 16).toString('hex'),
+    account => ({
+      id: account.id,
+      wallet: account.wallet,
+    }),
+    () => ({
+      id: fakeId(email),
+      wallet: JSON.stringify({
+        address: `0x${ethUtil.sha3(`${email}${'addressawobeqw4cq'}`).slice(0, 20).toString('hex')}`,
+        Crypto: {
+          cipher: 'aes-128-ctr',
+          cipherparams: {
+            iv: ethUtil.sha3(`${email}${'cipherparamsivaic4w6b'}`).slice(0, 16).toString('hex'),
+          },
+          ciphertext: ethUtil.sha3(`${email}${'ciphertextaoc84noq354'}`).slice(0, 32).toString('hex'),
+          kdf: 'scrypt',
+          kdfparams: {
+            dklen: 32,
+            n: 65536,
+            r: 1,
+            p: 8,
+            salt: ethUtil.sha3(`${email}${'kdfparamssalta7c465oa754'}`).slice(0, 32).toString('hex'),
+          },
+          mac: ethUtil.sha3(`${email}${'maco8wb47q5496q38745'}`).slice(0, 32).toString('hex'),
         },
-        ciphertext: ethUtil.sha3(`${email}${'ciphertextaoc84noq354'}`).slice(0, 32).toString('hex'),
-        kdf: 'scrypt',
-        kdfparams: {
-          dklen: 32,
-          n: 65536,
-          r: 1,
-          p: 8,
-          salt: ethUtil.sha3(`${email}${'kdfparamssalta7c465oa754'}`).slice(0, 32).toString('hex'),
-        },
-        mac: ethUtil.sha3(`${email}${'maco8wb47q5496q38745'}`).slice(0, 32).toString('hex'),
-      },
-      version: 3,
+        version: 3,
+      }),
     }),
   );
 };
