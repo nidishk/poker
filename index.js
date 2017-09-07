@@ -75,7 +75,11 @@ exports.handler = function handler(event, context, callback) {
       handleRequest = manager.queryAccount(event.email);
     } else if (path.indexOf('wallet') > -1) {
       if (method === 'POST') {
-        handleRequest = manager.setWallet(event.sessionReceipt, event.wallet);
+        handleRequest = manager.setWallet(
+          event.sessionReceipt,
+          event.wallet,
+          event.txHash,
+        );
       }
       if (method === 'PUT') {
         handleRequest = manager.resetWallet(event.sessionReceipt, event.wallet);

@@ -268,7 +268,7 @@ AccountManager.prototype.resetRequest = function resetRequest(email,
   );
 };
 
-AccountManager.prototype.setWallet = function setWallet(sessionReceipt, walletStr) {
+AccountManager.prototype.setWallet = function setWallet(sessionReceipt, walletStr, txHash) {
   // check session
   const session = checkSession(sessionReceipt, this.sessionAddr, Type.CREATE_CONF);
   // check data
@@ -286,14 +286,16 @@ AccountManager.prototype.setWallet = function setWallet(sessionReceipt, walletSt
     const refCode = Math.floor(Math.random() * 4294967295).toString(16);
     const refProm = this.db.putRef(refCode, session.accountId, 3);
     return Promise.all([walletProm, refProm]);
-  }).then(() =>
-    // notify worker to create contracts
-    this.notify(`WalletCreated::${wallet.address}`, {
-      accountId: account.id,
-      email: account.email,
-      signerAddr: wallet.address,
-    }),
-  );
+  }).then(() => {
+    if (!txHash) {
+      // notify worker to create contracts
+      this.notify(`WalletCreated::${wallet.address}`, {
+        accountId: account.id,
+        email: account.email,
+        signerAddr: wallet.address,
+      });
+    }
+  });
 };
 
 AccountManager.prototype.resetWallet = function resetWallet(sessionReceipt, walletStr) {
