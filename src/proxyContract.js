@@ -14,4 +14,15 @@ export default class ProxyContract extends Contract {
       { signerAddr },
     );
   }
+
+  getOwner(proxyAddr) {
+    const contract = this.web3.eth.contract(PROXY_ABI).at(proxyAddr);
+    return this.call(contract.getOwner.call);
+  }
+
+  isLocked(proxyAddr) {
+    const contract = this.web3.eth.contract(PROXY_ABI).at(proxyAddr);
+    return this.call(contract.isLocked.call);
+  }
+
 }

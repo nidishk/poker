@@ -4,7 +4,6 @@ import Web3 from 'web3';
 import Db from './src/db';
 import Email from './src/email';
 import Recaptcha from './src/recaptcha';
-import Factory from './src/factoryContract';
 import ProxyContr from './src/proxyContract';
 import AccountManager from './src/index';
 
@@ -12,7 +11,7 @@ const simpledb = new AWS.SimpleDB();
 const ses = new AWS.SES();
 
 const handleError = function handleError(err, callback) {
-  Raven.captureException(err, { server_name: 'account_service' }, (sendErr) => {
+  Raven.captureException(err, { server_name: 'account-service' }, (sendErr) => {
     if (sendErr) {
       console.log(JSON.stringify(sendErr)); // eslint-disable-line no-console
       return callback(sendErr);
@@ -43,22 +42,22 @@ exports.handler = function handler(event, context, callback) {
   const method = event.context['http-method'];
   const topicArn = process.env.TOPIC_ARN;
   const sessionPriv = process.env.SESSION_PRIV;
-  const accountTable = process.env.ACCOUNT_TABLE;
-  const factory = new Factory(web3, process.env.FACTORY_ADDR);
   const proxy = new ProxyContr(web3, process.env.SENDER_ADDR, new AWS.SQS(), process.env.QUEUE_URL);
-  const refTable = process.env.REF_TABLE;
   const fromEmail = process.env.FROM_EMAIL;
+  const accountTable = process.env.ACCOUNT_TABLE;
+  const refTable = process.env.REF_TABLE;
+  const proxyTable = process.env.PROXIES_TABLE;
 
   let handleRequest;
   const manager = new AccountManager(
-    new Db(simpledb, accountTable, refTable),
+    new Db(simpledb, accountTable, refTable, proxyTable),
     new Email(ses, fromEmail),
     new Recaptcha(recapSecret),
     new AWS.SNS(),
     topicArn,
     sessionPriv,
-    factory,
     proxy,
+    Raven,
   );
 
   try {
@@ -78,7 +77,7 @@ exports.handler = function handler(event, context, callback) {
         handleRequest = manager.setWallet(
           event.sessionReceipt,
           event.wallet,
-          event.txHash,
+          event.proxyAddr,
         );
       }
       if (method === 'PUT') {

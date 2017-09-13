@@ -6,14 +6,13 @@ import { Receipt } from 'poker-helper';
 import Db from './src/db';
 import Email from './src/email';
 import AccountManager from './src/index';
-import Factory from './src/factoryContract';
 import ProxyContr from './src/proxyContract';
 import { BadRequest } from './src/errors';
 
 chai.use(sinonChai);
 
 const globalRef = '00000000';
-const EMPTY = '0x';
+// const EMPTY = '0x';
 const ADDR1 = '0xe10f3d125e5f4c753a6456fc37123cf17c6900f2';
 const ADDR2 = '0xc3ccb3902a164b83663947aff0284c6624f3fbf2';
 
@@ -53,6 +52,12 @@ const contract = {
   getAccount: {
     call() {},
   },
+  getOwner: {
+    call() {},
+  },
+  isLocked: {
+    call() {},
+  },
 };
 
 const web3 = { eth: {
@@ -90,10 +95,13 @@ describe('Account Manager - add account', () => {
   it('should fail on key conflict.', (done) => {
     sinon.stub(sdb, 'getAttributes').yields(null, {
       Attributes: [
-      { Name: 'allowance', Value: ['1'] },
-      { Name: 'account', Value: [ACCOUNT_ID] },
-      ] });
-    sinon.stub(sdb, 'select').yields(null, {});
+        { Name: 'allowance', Value: ['1'] },
+        { Name: 'account', Value: [ACCOUNT_ID] },
+      ],
+    });
+    sinon.stub(sdb, 'select').yields(null, {}).onFirstCall().yields(null, {
+      Items: [{ Name: ADDR1 }],
+    });
     sinon.stub(recaptcha, 'verify').returns(Promise.resolve());
 
     const manager = new AccountManager(new Db(sdb), null, recaptcha, null, null, SESS_PRIV);
@@ -107,7 +115,9 @@ describe('Account Manager - add account', () => {
 
   it('should fail on captcha error.', (done) => {
     sinon.stub(sdb, 'getAttributes').yields(null, { Attributes: [] });
-    sinon.stub(sdb, 'select').yields(null, {});
+    sinon.stub(sdb, 'select').yields(null, {}).onFirstCall().yields(null, {
+      Items: [{ Name: ADDR1 }],
+    });
     sinon.stub(recaptcha, 'verify').returns(Promise.reject(new BadRequest('wrong')));
     const manager = new AccountManager(new Db(sdb), null, recaptcha, null, null, SESS_PRIV);
 
@@ -166,7 +176,9 @@ describe('Account Manager - add account', () => {
       Attributes: [
       { Name: 'allowance', Value: ['0'] },
       ] });
-    sinon.stub(sdb, 'select').yields(null, { Items: [] });
+    sinon.stub(sdb, 'select').yields(null, { Items: [] }).onFirstCall().yields(null, {
+      Items: [{ Name: ADDR1 }],
+    });
     sinon.stub(recaptcha, 'verify').returns(Promise.resolve());
 
     const manager = new AccountManager(new Db(sdb), null, recaptcha, null, null, SESS_PRIV);
@@ -184,7 +196,9 @@ describe('Account Manager - add account', () => {
       { Name: 'allowance', Value: ['1'] },
       { Name: 'account', Value: ['-'] },
       ] });
-    sinon.stub(sdb, 'select').yields(null, { Items: [] });
+    sinon.stub(sdb, 'select').yields(null, { Items: [] }).onFirstCall().yields(null, {
+      Items: [{ Name: ADDR1 }],
+    });
     sinon.stub(recaptcha, 'verify').returns(Promise.resolve());
 
     const manager = new AccountManager(new Db(sdb), null, recaptcha, null, null, SESS_PRIV);
@@ -200,32 +214,37 @@ describe('Account Manager - add account', () => {
     sinon.stub(sdb, 'getAttributes').yields(null, {}).onFirstCall().yields(null, {
       Attributes: [
       { Name: 'allowance', Value: ['1'] },
-      { Name: 'account', Value: [ACCOUNT_ID] },
+      { Name: 'account', Value: ACCOUNT_ID },
       ] });
-    sinon.stub(sdb, 'select').yields(null, {});
+    sinon.stub(sdb, 'select').yields(null, {}).onFirstCall().yields(null, {
+      Items: [{ Name: ADDR2 }],
+    });
     sinon.stub(sdb, 'putAttributes').yields(null, { ResponseMetadata: {} });
+    sinon.stub(sdb, 'deleteAttributes').yields(null, {});
     sinon.stub(recaptcha, 'verify').returns(Promise.resolve());
     sinon.stub(ses, 'sendEmail').yields(null, {});
     const manager = new AccountManager(new Db(sdb),
       new Email(ses), recaptcha, null, null, SESS_PRIV);
 
-    manager.addAccount(ACCOUNT_ID, TEST_MAIL, {}, null, null, globalRef).then(() => {
-      expect(sdb.putAttributes).calledWith({
-        Attributes: [
-          { Name: 'created', Replace: true, Value: sinon.match.any },
-          { Name: 'pendingEmail', Replace: true, Value: TEST_MAIL },
-          { Name: 'referral', Replace: true, Value: [ACCOUNT_ID] },
-        ],
-        DomainName: 'ab-accounts',
-        ItemName: ACCOUNT_ID,
-      });
-      expect(ses.sendEmail).calledWith(sinon.match({
-        Destination: { ToAddresses: [TEST_MAIL] },
-        Message: { Subject: { Data: 'Acebusters Email Verification Request' } },
-        Source: 'noreply@acebusters.com',
-      }));
-      done();
-    }).catch(done);
+    manager.addAccount(ACCOUNT_ID, TEST_MAIL,
+      { address: ADDR1 }, null, null, globalRef).then(() => {
+        expect(sdb.putAttributes).calledWith({
+          Attributes: [
+            { Name: 'created', Value: sinon.match.any, Replace: true },
+            { Name: 'pendingEmail', Value: TEST_MAIL, Replace: true },
+            { Name: 'referral', Value: ACCOUNT_ID, Replace: true },
+            { Name: 'proxyAddr', Value: ADDR2, Replace: true },
+          ],
+          DomainName: 'ab-accounts',
+          ItemName: ACCOUNT_ID,
+        });
+        expect(ses.sendEmail).calledWith(sinon.match({
+          Destination: { ToAddresses: [TEST_MAIL] },
+          Message: { Subject: { Data: 'Acebusters Email Verification Request' } },
+          Source: 'noreply@acebusters.com',
+        }));
+        done();
+      }).catch(done);
   });
 
   afterEach(() => {
@@ -297,11 +316,12 @@ describe('Account Manager - reset request ', () => {
 });
 
 describe('Account Manager - set Wallet ', () => {
-  it('should allow to set Wallet.', (done) => {
+  it('should allow to set wallet as fish.', (done) => {
     sinon.stub(sns, 'publish').yields(null, {});
     sinon.stub(sdb, 'getAttributes').yields(null, { Attributes: [
       { Name: 'id', Value: ACCOUNT_ID },
       { Name: 'email', Value: 'test@mail.com' },
+      { Name: 'proxyAddr', Value: ADDR2 },
     ] });
     sinon.stub(sdb, 'putAttributes').yields(null, { ResponseMetadata: {} });
     const manager = new AccountManager(new Db(sdb), null, null, sns, 'topicArn', SESS_PRIV);
@@ -311,9 +331,62 @@ describe('Account Manager - set Wallet ', () => {
     manager.setWallet(receipt, wallet).then(() => {
       expect(sdb.getAttributes).calledWith({ DomainName: 'ab-accounts', ItemName: ACCOUNT_ID });
       expect(sdb.putAttributes).calledWith({
-        Attributes: [{ Name: 'wallet', Replace: true, Value: wallet }],
+        Attributes: [
+          { Name: 'wallet', Replace: true, Value: wallet },
+          { Name: 'signerAddr', Replace: true, Value: SESS_ADDR },
+          { Name: 'proxyAddr', Replace: true, Value: ADDR2 },
+        ],
         DomainName: 'ab-accounts',
         ItemName: ACCOUNT_ID,
+      });
+      expect(sdb.putAttributes).calledWith({
+        Attributes: [
+          { Name: 'account', Replace: true, Value: ACCOUNT_ID },
+          { Name: 'allowance', Replace: true, Value: '3' },
+        ],
+        DomainName: 'ab-refs',
+        ItemName: sinon.match.any,
+      });
+      expect(sns.publish).callCount(1);
+      expect(sns.publish).calledWith({
+        Message: `{"accountId":"${ACCOUNT_ID}","email":"test@mail.com","signerAddr":"${SESS_ADDR}"}`,
+        Subject: `WalletCreated::${SESS_ADDR}`,
+        TopicArn: 'topicArn',
+      });
+      done();
+    }).catch(done);
+  });
+
+  it('should allow to set Wallet as shark.', (done) => {
+    sinon.stub(sns, 'publish').yields(null, {});
+    sinon.stub(sdb, 'getAttributes').yields(null, { Attributes: [
+      { Name: 'id', Value: ACCOUNT_ID },
+      { Name: 'email', Value: 'test@mail.com' },
+      { Name: 'proxyAddr', Value: ADDR2 },
+    ] });
+    sinon.stub(sdb, 'putAttributes').yields(null, { ResponseMetadata: {} });
+    const manager = new AccountManager(new Db(sdb), null, null, sns, 'topicArn', SESS_PRIV);
+
+    const receipt = new Receipt().createConf(ACCOUNT_ID).sign(SESS_PRIV);
+    const wallet = `{ "address": "${SESS_ADDR}" }`;
+    manager.setWallet(receipt, wallet, ADDR1).then(() => {
+      expect(sdb.getAttributes).calledWith({ DomainName: 'ab-accounts', ItemName: ACCOUNT_ID });
+      expect(sdb.putAttributes).callCount(3);
+      expect(sdb.putAttributes).calledWith({
+        Attributes: [
+          { Name: 'wallet', Replace: true, Value: wallet },
+          { Name: 'signerAddr', Replace: true, Value: SESS_ADDR },
+          { Name: 'proxyAddr', Replace: true, Value: ADDR1 },
+        ],
+        DomainName: 'ab-accounts',
+        ItemName: ACCOUNT_ID,
+      });
+      expect(sdb.putAttributes).calledWith({
+        DomainName: 'ab-proxies',
+        ItemName: ADDR2,
+        Attributes: [
+          { Name: 'proxyAddr', Value: ADDR2 },
+        ],
       });
       expect(sdb.putAttributes).calledWith({
         Attributes: [
@@ -344,7 +417,7 @@ describe('Account Manager - set Wallet ', () => {
   });
 });
 
-describe('Account Manager - reset Wallet ', () => {
+describe('Account Manager - reset Wallet', () => {
   it('should prevent reset with create session.', () => {
     const manager = new AccountManager(null, null, null, null, null, SESS_PRIV);
 
@@ -360,6 +433,7 @@ describe('Account Manager - reset Wallet ', () => {
     sinon.stub(sns, 'publish').yields(null, {});
     sinon.stub(sdb, 'getAttributes').yields(null, { Attributes: [
       { Name: 'wallet', Value: '{"address": "0x1234"}' },
+      { Name: 'proxyAddr', Value: ADDR2 },
     ] });
     sinon.stub(sdb, 'putAttributes').yields(null, { ResponseMetadata: {} });
     const manager = new AccountManager(new Db(sdb), null, null, sns, 'topicArn', SESS_PRIV);
@@ -369,7 +443,11 @@ describe('Account Manager - reset Wallet ', () => {
     manager.resetWallet(receipt, wallet).then(() => {
       expect(sdb.getAttributes).calledWith({ DomainName: 'ab-accounts', ItemName: ACCOUNT_ID });
       expect(sdb.putAttributes).calledWith({
-        Attributes: [{ Name: 'wallet', Replace: true, Value: wallet }],
+        Attributes: [
+          { Name: 'wallet', Replace: true, Value: wallet },
+          { Name: 'signerAddr', Replace: true, Value: SESS_ADDR },
+          { Name: 'proxyAddr', Replace: true, Value: ADDR2 },
+        ],
         DomainName: 'ab-accounts',
         ItemName: ACCOUNT_ID,
       });
@@ -388,23 +466,29 @@ describe('Account Manager - reset Wallet ', () => {
   });
 });
 
-describe('Account Manager - congfirm email ', () => {
+describe('Account Manager - congfirm email', () => {
   it('should allow to confirm email.', (done) => {
     sinon.stub(sdb, 'getAttributes').yields(null, { Attributes: [
       { Name: 'pendingEmail', Value: TEST_MAIL },
     ] });
     sinon.stub(sdb, 'putAttributes').yields(null, { ResponseMetadata: {} });
     sinon.stub(sdb, 'deleteAttributes').yields(null, { ResponseMetadata: {} });
-    const manager = new AccountManager(new Db(sdb), null, null, sns, 'topicArn', SESS_PRIV);
+    const manager = new AccountManager(new Db(sdb),
+      null, null, sns, 'topicArn', SESS_PRIV, null, null);
 
     const receipt = new Receipt().createConf(ACCOUNT_ID).sign(SESS_PRIV);
     manager.confirmEmail(receipt).then(() => {
+      expect(sdb.getAttributes).callCount(1);
       expect(sdb.getAttributes).calledWith({ DomainName: 'ab-accounts', ItemName: ACCOUNT_ID });
+      expect(sdb.putAttributes).callCount(1);
       expect(sdb.putAttributes).calledWith({
-        Attributes: [{ Name: 'email', Replace: true, Value: TEST_MAIL }],
+        Attributes: [
+          { Name: 'email', Replace: true, Value: TEST_MAIL },
+        ],
         DomainName: 'ab-accounts',
         ItemName: ACCOUNT_ID,
       });
+      expect(sdb.deleteAttributes).callCount(1);
       expect(sdb.deleteAttributes).calledWith({
         Attributes: [{ Name: 'pendingEmail' }],
         DomainName: 'ab-accounts',
@@ -568,7 +652,6 @@ describe('Account Manager - referrals ', () => {
   });
 });
 
-
 describe('Transaction forwarding', () => {
   it('should error on invalid receipt.', (done) => {
     const invalidReceipt = 'M4YP.q2nMwonzSBctgq6qrQP9R6t/4xWjUIp5a+QnbQyd+U0=.V2RkK7APB5zIwVA0SGFnQRhPO/gEEnLdCdGG+bYrjKo=.G93u/wARIjMAAAAOgujGz0LI0f+VlLF6P1DpShLMhg8=.AAAAAAAAAAABBBAAAAAAAAAAAAAAAAAAAAAAAAAB1MA=.ESIzRA==';
@@ -579,58 +662,53 @@ describe('Transaction forwarding', () => {
     }).catch(done);
   });
 
-  it('should handle non existing signer in factory.', async () => {
-    const forwardReceipt = 'M4YP.q2nMwonzSBctgq6qrQP9R6t/4xWjUIp5a+QnbQyd+U0=.V2RkK7APB5zIwVA0SGFnQRhPO/gEEnLdCdGG+bYrjKo=.G93u/wARIjMAAAAOgujGz0LI0f+VlLF6P1DpShLMhg8=.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB1MA=.ESIzRA==';
-    sinon.stub(contract.getAccount, 'call').yields(null, [EMPTY, EMPTY, false]);
-    const factory = new Factory(web3, '0x1255', sqs, 'url');
-    const proxy = new ProxyContr(web3, '0x1255', sqs, 'url');
-    const manager = new AccountManager(null, null, null, null, null, null, factory, proxy);
-
-    try {
-      await manager.forward(forwardReceipt);
-    } catch (err) {
-      expect(err.message).to.contain('Not Found: ');
-      expect(err.message).to.contain('no proxy');
-    }
-  });
-
   it('should fail on wrong owner.', async () => {
     const forwardReceipt = 'M4YP.q2nMwonzSBctgq6qrQP9R6t/4xWjUIp5a+QnbQyd+U0=.V2RkK7APB5zIwVA0SGFnQRhPO/gEEnLdCdGG+bYrjKo=.G93u/wARIjMAAAAOgujGz0LI0f+VlLF6P1DpShLMhg8=.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB1MA=.ESIzRA==';
-    sinon.stub(contract.getAccount, 'call').yields(null, [ADDR1, ADDR1, true]);
-    const factory = new Factory(web3, '0x1255', sqs, 'url');
+    sinon.stub(contract.getOwner, 'call').yields(null, ADDR1);
+    sinon.stub(contract.isLocked, 'call').yields(null, true);
+    sinon.stub(sdb, 'select').yields(null, { Items: [{ Name: ACCOUNT_ID,
+      Attributes: [
+        { Name: 'email', Value: TEST_MAIL },
+        { Name: 'wallet', Value: `{ "address": "${SESS_ADDR}" }` },
+      ],
+    }] });
     const proxy = new ProxyContr(web3, '0x1255', sqs, 'url');
-    const manager = new AccountManager(null, null, null, null, null, null, factory, proxy);
+    const manager = new AccountManager(new Db(sdb), null, null, null, null, null, proxy);
 
     try {
       await manager.forward(forwardReceipt);
     } catch (err) {
-      expect(err.message).to.contain('Bad Request: ');
-      expect(err.message).to.contain('wrong owner');
+      expect(err).to.contain('Bad Request: ');
+      expect(err).to.contain('wrong owner');
     }
   });
 
   it('should fail on unlocked account.', async () => {
     const forwardReceipt = 'M4YP.q2nMwonzSBctgq6qrQP9R6t/4xWjUIp5a+QnbQyd+U0=.V2RkK7APB5zIwVA0SGFnQRhPO/gEEnLdCdGG+bYrjKo=.G93u/wARIjMAAAAOgujGz0LI0f+VlLF6P1DpShLMhg8=.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB1MA=.ESIzRA==';
-    sinon.stub(contract.getAccount, 'call').yields(null, [ADDR1, EMPTY, false]);
-    const factory = new Factory(web3, '0x1255', sqs, 'url');
+    sinon.stub(contract.getOwner, 'call').yields(null, ADDR1);
+    sinon.stub(contract.isLocked, 'call').yields(null, false);
+    sinon.stub(sdb, 'select').yields(null, { Items: [{ Name: ACCOUNT_ID,
+      Attributes: [
+        { Name: 'email', Value: TEST_MAIL },
+        { Name: 'wallet', Value: `{ "address": "${SESS_ADDR}" }` },
+      ],
+    }] });
     const proxy = new ProxyContr(web3, '0x1255', sqs, 'url');
-    const manager = new AccountManager(null, null, null, null, null, null, factory, proxy);
+    const manager = new AccountManager(new Db(sdb), null, null, null, null, null, proxy);
 
     try {
       await manager.forward(forwardReceipt);
     } catch (err) {
-      expect(err.message).to.contain('Bad Request: ');
-      expect(err.message).to.contain('unlocked');
+      expect(err).to.contain('Bad Request: ');
+      expect(err).to.contain('unlocked');
     }
   });
 
   it('should handle error in tx send.', (done) => {
     const forwardReceipt = 'M4YP.q2nMwonzSBctgq6qrQP9R6t/4xWjUIp5a+QnbQyd+U0=.V2RkK7APB5zIwVA0SGFnQRhPO/gEEnLdCdGG+bYrjKo=.G93u/wARIjMAAAAOgujGz0LI0f+VlLF6P1DpShLMhg8=.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB1MA=.ESIzRA==';
-    sinon.stub(contract.getAccount, 'call').yields(null, [ADDR1, ADDR2, true]);
     sinon.stub(contract.forward, 'estimateGas').yields(null, 80000000);
-    const factory = new Factory(web3, ADDR2, sqs, 'url');
     const proxy = new ProxyContr(web3, ADDR2, sqs, 'url');
-    const manager = new AccountManager(null, null, null, null, null, null, factory, proxy);
+    const manager = new AccountManager(null, null, null, null, null, null, proxy);
 
     manager.forward(forwardReceipt).catch((err) => {
       expect(err).to.contain('Error: ');
@@ -640,13 +718,20 @@ describe('Transaction forwarding', () => {
 
   it('should allow to send tx.', (done) => {
     const forwardReceipt = 'M3H7.MNZGDLtAeTTotcF1RaTQC9yxTG1v872In6Gsya76od8=.KFBvWNlOMlaQ4Ig2S8d7cC4sBru9Vrg7H2vcdoCKyhM=.G8vPm8PCpXAAAAAJ+MBn16c2YEpuxSOND1mmlhVVaEI=.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=.koQ4zQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB9AAAAAAAAAAAAAAAAAA+SccfDWbn6bznUytzcR/sW8cfsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABA==';
-    sinon.stub(contract.getAccount, 'call').yields(null, [ADDR1, ADDR2, true]);
+    sinon.stub(contract.getOwner, 'call').yields(null, ADDR2);
+    sinon.stub(contract.isLocked, 'call').yields(null, true);
+    sinon.stub(sdb, 'select').yields(null, { Items: [{ Name: ACCOUNT_ID,
+      Attributes: [
+        { Name: 'email', Value: TEST_MAIL },
+        { Name: 'proxyAddr', Value: ADDR1 },
+        { Name: 'wallet', Value: `{ "address": "${SESS_ADDR}" }` },
+      ],
+    }] });
     sinon.stub(contract.forward, 'getData').returns('0x112233');
     sinon.stub(contract.forward, 'estimateGas').yields(null, 100000);
     sinon.stub(sqs, 'sendMessage').yields(null, {});
-    const factory = new Factory(web3, ADDR2, sqs, 'url');
     const proxy = new ProxyContr(web3, ADDR2, sqs, 'url');
-    const manager = new AccountManager(null, null, null, null, null, null, factory, proxy);
+    const manager = new AccountManager(new Db(sdb), null, null, null, null, null, proxy);
 
     manager.forward(forwardReceipt).then(() => {
       expect(sqs.sendMessage).calledWith({
@@ -661,6 +746,9 @@ describe('Transaction forwarding', () => {
   afterEach(() => {
     if (contract.forward.estimateGas.restore) contract.forward.estimateGas.restore();
     if (contract.getAccount.call.restore) contract.getAccount.call.restore();
+    if (contract.getOwner.call.restore) contract.getOwner.call.restore();
+    if (contract.isLocked.call.restore) contract.isLocked.call.restore();
     if (sqs.sendMessage.restore) sqs.sendMessage.restore();
+    if (sdb.select.restore) sdb.select.restore();
   });
 });

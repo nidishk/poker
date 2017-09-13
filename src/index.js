@@ -97,14 +97,15 @@ function checkWallet(walletStr) {
   return wallet;
 }
 
-function AccountManager(db, email, recaptcha, sns, topicArn, sessionPriv, factory, proxy) {
+function AccountManager(db, email, recaptcha, sns, topicArn, sessionPriv, proxy, sentry) {
   this.db = db;
   this.email = email;
   this.recaptcha = recaptcha;
   this.sns = sns;
-  this.factory = factory;
   this.proxy = proxy;
   this.topicArn = topicArn;
+  this.sentry = sentry;
+
   if (sessionPriv) {
     this.sessionPriv = sessionPriv;
     const priv = new Buffer(sessionPriv.replace('0x', ''), 'hex');
@@ -158,19 +159,34 @@ AccountManager.prototype.getRef = function getRef(refCode) {
   });
 };
 
-AccountManager.prototype.forward = function forward(forwardReceipt, resetConfReceipt) {
+AccountManager.prototype.forward = async function forward(forwardReceipt) {
   try {
-    const receipt = Receipt.parse(forwardReceipt);
-    const resetReceipt = resetConfReceipt && Receipt.parse(resetConfReceipt);
-    const signerAddr = resetReceipt ? resetReceipt.oldSignerAddr : receipt.signer;
-    return this.factory.getAccount(signerAddr).then((account) => {
-      if (account.owner !== this.proxy.senderAddr) {
-        throw new BadRequest(`wrong owner ${account.owner} found on poxy ${account.proxy}`);
-      }
-      return this.proxy.forward(account.proxy, receipt.destinationAddr,
-        receipt.amount, receipt.data, signerAddr);
-    }).then(rsp => Promise.resolve(rsp[0]));
+    const { signer: signerAddr, destinationAddr, amount, data } = Receipt.parse(forwardReceipt);
+    const account = await this.db.getAccountBySignerAddr(signerAddr);
+    const [owner, isLocked] = await Promise.all([
+      this.proxy.getOwner(account.proxyAddr),
+      this.proxy.isLocked(account.proxyAddr),
+    ]);
+
+    if (!isLocked) {
+      throw new BadRequest(`${account.proxyAddr} is an unlocked account. send tx with ${owner}`);
+    }
+
+    if (owner !== this.proxy.senderAddr) {
+      throw new BadRequest(`wrong owner ${owner} found on proxy ${account.proxyAddr}`);
+    }
+
+    const response = await this.proxy.forward(
+      account.proxyAddr,
+      destinationAddr,
+      amount,
+      data,
+      signerAddr,
+    );
+
+    return response[0];
   } catch (e) {
+    // console.log(e);
     return Promise.reject(`Bad Request: ${e}`);
   }
 };
@@ -183,10 +199,12 @@ AccountManager.prototype.queryAccount = function queryAccount(email) {
   return this.db.getAccountByEmail(email).then(
     account => ({
       id: account.id,
+      proxyAddr: account.proxyAddr,
       wallet: account.wallet,
     }),
     () => ({
       id: fakeId(email),
+      proxyAddr: `0x${ethUtil.sha3(`${email}${'proxyAddrobeqw4cq'}`).slice(0, 20).toString('hex')}`,
       wallet: JSON.stringify({
         address: `0x${ethUtil.sha3(`${email}${'addressawobeqw4cq'}`).slice(0, 20).toString('hex')}`,
         Crypto: {
@@ -215,20 +233,20 @@ AccountManager.prototype.queryUnlockReceipt = async function queryUnlockReceipt(
   try {
     const unlockRequestReceipt = Receipt.parse(unlockRequest);
     const secsFromCreated = Math.floor(Date.now() / 1000) - unlockRequestReceipt.created;
-    const account = await this.factory.getAccount(unlockRequestReceipt.signer);
+    const account = await this.db.getAccountBySignerAddr(unlockRequestReceipt.signer);
 
     if (secsFromCreated > 600) {
       throw new BadRequest('Receipt is outdated');
     }
 
-    if (account.proxy !== '0x') {
-      const receipt = new Receipt(account.proxy)
+    if (account.proxyAddr !== '0x') {
+      const receipt = new Receipt(account.proxyAddr)
                       .unlock(unlockRequestReceipt.newOwner)
                       .sign('0x94890218f2b0d04296f30aeafd13655eba4c5bbf1770273276fee52cbe3f2cb4');
       return receipt;
     }
 
-    throw new BadRequest(`Proxy for ${unlockRequestReceipt.signer} doesn't exist`);
+    throw new BadRequest(`Account with signerAddr = ${unlockRequestReceipt.signer} doesn't exist`);
   } catch (e) {
     throw e;
   }
@@ -247,8 +265,9 @@ AccountManager.prototype.addAccount = async function addAccount(accountId,
   }
   const receipt = new Receipt().createConf(accountId).sign(this.sessionPriv);
 
-  const [referral] = await Promise.all([
+  const [referral, proxyAddr] = await Promise.all([
     this.db.getRef(refCode),
+    this.db.getProxy(),
     this.recaptcha.verify(recapResponse, sourceIp),
   ]);
 
@@ -263,14 +282,15 @@ AccountManager.prototype.addAccount = async function addAccount(accountId,
 
   await this.db.checkAccountConflict(accountId, email);
   await Promise.all([
-    this.db.putAccount(accountId, {
-      created: [new Date().toString()],
-      pendingEmail: [email],
-      referral: [referral.account],
-    }),
+    this.db.putAccount(
+      accountId,
+      email,
+      Array.isArray(referral.account) ? referral.account[0] : referral.account,
+      proxyAddr,
+    ),
+    this.db.deleteProxy(proxyAddr),
     this.db.setRefAllowance(refCode, referral.allowance - 1),
   ]);
-
   return this.email.sendConfirm(email, receipt, origin);
 };
 
@@ -291,7 +311,7 @@ AccountManager.prototype.resetRequest = function resetRequest(email,
   );
 };
 
-AccountManager.prototype.setWallet = function setWallet(sessionReceipt, walletStr, txHash) {
+AccountManager.prototype.setWallet = function setWallet(sessionReceipt, walletStr, proxyAddr) {
   // check session
   const session = checkSession(sessionReceipt, this.sessionAddr, Type.CREATE_CONF);
   // check data
@@ -303,21 +323,30 @@ AccountManager.prototype.setWallet = function setWallet(sessionReceipt, walletSt
     if (account.wallet) {
       throw new Conflict('wallet already set.');
     }
+    // if the user brings a proxy, put reserved one back into pool
+    let reservedProxy;
+    if (proxyAddr) {
+      reservedProxy = account.proxyAddr;
+      account.proxyAddr = proxyAddr;
+    }
     // set new wallet
-    const walletProm = this.db.setWallet(session.accountId, walletStr);
+    const walletProm = this.db.setWallet(session.accountId,
+      walletStr, wallet.address, account.proxyAddr);
     // create ref code
     const refCode = Math.floor(Math.random() * 4294967295).toString(16);
     const refProm = this.db.putRef(refCode, session.accountId, 3);
-    return Promise.all([walletProm, refProm]);
-  }).then(() => {
-    if (!txHash) {
-      // notify worker to create contracts
-      this.notify(`WalletCreated::${wallet.address}`, {
-        accountId: account.id,
-        email: account.email,
-        signerAddr: wallet.address,
-      });
+    const promises = [walletProm, refProm];
+    if (reservedProxy) {
+      promises.push(this.db.addProxy(reservedProxy));
     }
+    return Promise.all(promises);
+  }).then(() => {
+    // notify worker to add account to email newsletter
+    this.notify(`WalletCreated::${wallet.address}`, {
+      accountId: account.id,
+      email: account.email,
+      signerAddr: wallet.address,
+    });
   });
 };
 
@@ -340,7 +369,7 @@ AccountManager.prototype.resetWallet = function resetWallet(sessionReceipt, wall
       throw new Conflict('can not reset wallet with same address.');
     }
     // reset wallet
-    return this.db.setWallet(session.accountId, walletStr);
+    return this.db.setWallet(session.accountId, walletStr, wallet.address, account.proxyAddr);
   });
 };
 
@@ -368,6 +397,22 @@ AccountManager.prototype.notify = function notify(subject, event) {
         return;
       }
       fulfill({});
+    });
+  });
+};
+
+AccountManager.prototype.log = function log(message, context) {
+  const ctx = context || {};
+  ctx.server_name = 'account-service';
+  ctx.level = (ctx.level) ? ctx.level : 'info';
+  return new Promise((fulfill, reject) => {
+    const now = Math.floor(Date.now() / 1000);
+    this.sentry.captureMessage(`${now} - ${message}`, ctx, (error, eventId) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      fulfill(eventId);
     });
   });
 };
