@@ -97,7 +97,8 @@ function checkWallet(walletStr) {
   return wallet;
 }
 
-function AccountManager(db, email, recaptcha, sns, topicArn, sessionPriv, proxy, sentry, unlockPriv) {
+function AccountManager(db,
+  email, recaptcha, sns, topicArn, sessionPriv, proxy, sentry, unlockPriv) {
   this.db = db;
   this.email = email;
   this.recaptcha = recaptcha;
