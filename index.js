@@ -42,6 +42,7 @@ exports.handler = function handler(event, context, callback) {
   const method = event.context['http-method'];
   const topicArn = process.env.TOPIC_ARN;
   const sessionPriv = process.env.SESSION_PRIV;
+  const unlockPriv = process.env.RECOVERY_PRIV;
   const proxy = new ProxyContr(web3, process.env.SENDER_ADDR, new AWS.SQS(), process.env.QUEUE_URL);
   const fromEmail = process.env.FROM_EMAIL;
   const accountTable = process.env.ACCOUNT_TABLE;
@@ -58,6 +59,7 @@ exports.handler = function handler(event, context, callback) {
     sessionPriv,
     proxy,
     Raven,
+    unlockPriv,
   );
 
   try {

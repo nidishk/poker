@@ -97,7 +97,7 @@ function checkWallet(walletStr) {
   return wallet;
 }
 
-function AccountManager(db, email, recaptcha, sns, topicArn, sessionPriv, proxy, sentry) {
+function AccountManager(db, email, recaptcha, sns, topicArn, sessionPriv, proxy, sentry, unlockPriv) {
   this.db = db;
   this.email = email;
   this.recaptcha = recaptcha;
@@ -105,7 +105,7 @@ function AccountManager(db, email, recaptcha, sns, topicArn, sessionPriv, proxy,
   this.proxy = proxy;
   this.topicArn = topicArn;
   this.sentry = sentry;
-
+  this.unlockPriv = unlockPriv;
   if (sessionPriv) {
     this.sessionPriv = sessionPriv;
     const priv = new Buffer(sessionPriv.replace('0x', ''), 'hex');
@@ -242,7 +242,7 @@ AccountManager.prototype.queryUnlockReceipt = async function queryUnlockReceipt(
     if (account.proxyAddr !== '0x') {
       const receipt = new Receipt(account.proxyAddr)
                       .unlock(unlockRequestReceipt.newOwner)
-                      .sign('0x94890218f2b0d04296f30aeafd13655eba4c5bbf1770273276fee52cbe3f2cb4');
+                      .sign(this.unlockPriv);
       return receipt;
     }
 
