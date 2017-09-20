@@ -285,7 +285,7 @@ AccountManager.prototype.addAccount = async function addAccount(accountId,
   await Promise.all([
     this.db.putAccount(
       accountId,
-      email,
+      email.toLowerCase(),
       Array.isArray(referral.account) ? referral.account[0] : referral.account,
       proxyAddr,
     ),

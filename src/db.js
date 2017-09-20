@@ -76,7 +76,7 @@ Db.prototype.checkAccountConflict = function checkAccountConflict(accountId, ema
   });
   const mailCheck = new Promise((fulfill, reject) => {
     this.sdb.select({
-      SelectExpression: `select * from \`${this.domain}\` where email =  "${email}" or pendingEmail =  "${email}"  limit 1`,
+      SelectExpression: `select * from \`${this.domain}\` where email =  "${email.toLowerCase()}" or pendingEmail =  "${email.toLowerCase()}"  limit 1`,
     }, (err, data) => {
       if (err) {
         return reject(`Error: ${err}`);
@@ -109,7 +109,7 @@ Db.prototype.getAccountWithCondition = function getAccountWithCondition(cond) {
 };
 
 Db.prototype.getAccountByEmail = function getAccountByEmail(email) {
-  return this.getAccountWithCondition(`email = "${email}"`);
+  return this.getAccountWithCondition(`email = "${email.toLowerCase()}"`);
 };
 
 Db.prototype.getAccountBySignerAddr = function getAccountBySignerAddr(signerAddr) {
@@ -161,7 +161,7 @@ Db.prototype.updateEmailComplete = function updateEmailComplete(accountId, email
       DomainName: this.domain,
       ItemName: accountId,
       Attributes: [
-        { Name: 'email', Value: email, Replace: true },
+        { Name: 'email', Value: email.toLowerCase(), Replace: true },
       ],
     }, (err, data) => {
       if (err) {
