@@ -379,10 +379,11 @@ AccountManager.prototype.confirmEmail = function confirmEmail(sessionReceipt) {
   const session = checkSession(sessionReceipt, this.sessionAddr, Type.CREATE_CONF);
   // handle email
   return this.db.getAccount(session.accountId).then((account) => {
-    if (account.email) {
-      throw new BadRequest('email already set.');
+    if (!account.email) {
+      return this.db.updateEmailComplete(session.accountId, account.pendingEmail);
     }
-    return this.db.updateEmailComplete(session.accountId, account.pendingEmail);
+
+    return true;
   });
 };
 
