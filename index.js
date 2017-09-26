@@ -6,29 +6,21 @@ import Email from './src/email';
 import Recaptcha from './src/recaptcha';
 import ProxyContr from './src/proxyContract';
 import AccountManager from './src/index';
+import Logger from './src/logger';
 
 const simpledb = new AWS.SimpleDB();
 const ses = new AWS.SES();
 
-const handleError = function handleError(err, callback) {
-  Raven.captureException(err, { server_name: 'account-service' }, (sendErr) => {
-    if (sendErr) {
-      console.log(JSON.stringify(sendErr)); // eslint-disable-line no-console
-      return callback(sendErr);
-    }
-    if (err.errName) {
-      // these are known errors: 4xx
-      return callback(err.message);
-    }
-    // everything shall map to http 500
-    return callback(`Error: ${err.message}`);
-  });
+const handleError = function handleError(err, logger, callback) {
+  logger.exception(err).then(callback);
 };
 
 let web3Provider;
 
 exports.handler = function handler(event, context, callback) {
   Raven.config(process.env.SENTRY_URL).install();
+
+  const logger = new Logger(Raven, context.functionName, 'account-service');
 
   let web3;
   if (!web3Provider) {
@@ -58,7 +50,7 @@ exports.handler = function handler(event, context, callback) {
     topicArn,
     sessionPriv,
     proxy,
-    Raven,
+    logger,
     unlockPriv,
   );
 
@@ -114,13 +106,13 @@ exports.handler = function handler(event, context, callback) {
       handleRequest = Promise.reject(`Not Found: unexpected path: ${path}`);
     }
   } catch (err) {
-    handleError(err, callback);
+    handleError(err, logger, callback);
     return;
   }
   handleRequest.then((data) => {
     callback(null, data);
   }).catch((err) => {
-    handleError(err, callback);
+    handleError(err, logger, callback);
   });
 };
 

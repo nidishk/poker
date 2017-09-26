@@ -98,14 +98,14 @@ function checkWallet(walletStr) {
 }
 
 function AccountManager(db,
-  email, recaptcha, sns, topicArn, sessionPriv, proxy, sentry, unlockPriv) {
+  email, recaptcha, sns, topicArn, sessionPriv, proxy, logger, unlockPriv) {
   this.db = db;
   this.email = email;
   this.recaptcha = recaptcha;
   this.sns = sns;
   this.proxy = proxy;
   this.topicArn = topicArn;
-  this.sentry = sentry;
+  this.logger = logger;
   this.unlockPriv = unlockPriv;
   if (sessionPriv) {
     this.sessionPriv = sessionPriv;
@@ -399,22 +399,6 @@ AccountManager.prototype.notify = function notify(subject, event) {
         return;
       }
       fulfill({});
-    });
-  });
-};
-
-AccountManager.prototype.log = function log(message, context) {
-  const ctx = context || {};
-  ctx.server_name = 'account-service';
-  ctx.level = (ctx.level) ? ctx.level : 'info';
-  return new Promise((fulfill, reject) => {
-    const now = Math.floor(Date.now() / 1000);
-    this.sentry.captureMessage(`${now} - ${message}`, ctx, (error, eventId) => {
-      if (error) {
-        reject(error);
-        return;
-      }
-      fulfill(eventId);
     });
   });
 };
