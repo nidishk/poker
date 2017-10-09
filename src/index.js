@@ -266,11 +266,12 @@ AccountManager.prototype.addAccount = async function addAccount(accountId,
   }
   const receipt = new Receipt().createConf(accountId).sign(this.sessionPriv);
 
-  const [referral, proxyAddr] = await Promise.all([
+  const [referral] = await Promise.all([
     this.db.getRef(refCode),
-    this.db.getProxy(),
     this.recaptcha.verify(recapResponse, sourceIp),
   ]);
+
+  const proxyAddr = await this.db.getProxy();
 
   if (referral.allowance < 1) {
     // 418 - invite limit for this code reached
