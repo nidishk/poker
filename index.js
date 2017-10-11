@@ -7,6 +7,7 @@ import Recaptcha from './src/recaptcha';
 import ProxyContr from './src/proxyContract';
 import AccountManager from './src/index';
 import Logger from './src/logger';
+import SlackAlert from './src/slackAlert';
 
 const simpledb = new AWS.SimpleDB();
 const ses = new AWS.SES();
@@ -40,6 +41,15 @@ exports.handler = function handler(event, context, callback) {
   const accountTable = process.env.ACCOUNT_TABLE;
   const refTable = process.env.REF_TABLE;
   const proxyTable = process.env.PROXIES_TABLE;
+  const minProxiesAlertThreshold = process.env.SLACK_ALERT_MIN_PROXIES_THRESHOLD || 3;
+  const slackAlertUrl = process.env.SLACK_ALERT_URL;
+  const slackAlertChannel = process.env.SLACK_ALERT_CHANNEL;
+
+  let slackAlert;
+  if (slackAlertUrl && slackAlertChannel) {
+    const env = process.env.ENV ? process.env.ENV : proxyTable;
+    slackAlert = new SlackAlert(slackAlertUrl, slackAlertChannel, env);
+  }
 
   let handleRequest;
   const manager = new AccountManager(
@@ -52,6 +62,8 @@ exports.handler = function handler(event, context, callback) {
     proxy,
     logger,
     unlockPriv,
+    slackAlert,
+    minProxiesAlertThreshold,
   );
 
   try {
@@ -115,4 +127,3 @@ exports.handler = function handler(event, context, callback) {
     handleError(err, logger, callback);
   });
 };
-

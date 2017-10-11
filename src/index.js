@@ -97,8 +97,8 @@ function checkWallet(walletStr) {
   return wallet;
 }
 
-function AccountManager(db,
-  email, recaptcha, sns, topicArn, sessionPriv, proxy, logger, unlockPriv) {
+function AccountManager(db, email, recaptcha, sns, topicArn, sessionPriv, proxy, logger,
+  unlockPriv, slackAlert, minProxiesAlertThreshold) {
   this.db = db;
   this.email = email;
   this.recaptcha = recaptcha;
@@ -107,6 +107,8 @@ function AccountManager(db,
   this.topicArn = topicArn;
   this.logger = logger;
   this.unlockPriv = unlockPriv;
+  this.slackAlert = slackAlert;
+  this.minProxiesAlertThreshold = minProxiesAlertThreshold;
   if (sessionPriv) {
     this.sessionPriv = sessionPriv;
     const priv = new Buffer(sessionPriv.replace('0x', ''), 'hex');
@@ -293,7 +295,29 @@ AccountManager.prototype.addAccount = async function addAccount(accountId,
     this.db.deleteProxy(proxyAddr),
     this.db.setRefAllowance(refCode, referral.allowance - 1),
   ]);
+
+  // check we have enough proxies in the pool.
+  try {
+    await this.checkProxyPoolSize();
+  } catch (e) {
+    // Do nothing on failure - we don't want this to mess with the business logic
+    console.warn(`Proxy pool size check failed: ${e}`);
+  }
+
   return this.email.sendConfirm(email, receipt, origin);
+};
+
+AccountManager.prototype.checkProxyPoolSize = function checkProxyPoolSize() {
+  if (!this.slackAlert || !this.minProxiesAlertThreshold) return Promise.resolve();
+
+  return this.db.getAvailableProxiesCount()
+    .then((proxiesCount) => {
+      if (proxiesCount >= this.minProxiesAlertThreshold) return true;
+
+      const text = `Only ${proxiesCount} spare account proxies available.\n` +
+                 'Create some more to prevent failing signups.';
+      return this.slackAlert.sendAlert(text);
+    });
 };
 
 AccountManager.prototype.resetRequest = function resetRequest(email,
