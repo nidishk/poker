@@ -3,7 +3,6 @@ import { Receipt, Type } from 'poker-helper';
 import ethUtil from 'ethereumjs-util';
 import { BadRequest, Unauthorized, Forbidden, Conflict, EnhanceYourCalm, Teapot } from './errors';
 
-const timeout = 2; // hours <- timeout for email verification
 const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const refRegex = /^[0-9a-f]{8}$/i;
 const emailRegex = /^(([^<>()[\]\\.,;:\s@']+(\.[^<>()[\]\\.,;:\s@']+)*)|('.+'))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
@@ -63,7 +62,7 @@ function isAddress(address) {
   return isChecksumAddress(address);
 }
 
-function checkSession(sessionReceipt, sessionAddr, type) {
+function checkSession(sessionReceipt, sessionAddr, type, timeoutHours) {
   // check session
   let session;
   try {
@@ -74,10 +73,16 @@ function checkSession(sessionReceipt, sessionAddr, type) {
   if (session.signer !== sessionAddr) {
     throw new Unauthorized(`invalid session signer: ${session.signer}.`);
   }
-  const before2Hours = (Date.now() / 1000) - (60 * 60 * timeout);
-  if (session.created < before2Hours) {
-    throw new Unauthorized(`session expired since ${before2Hours - session.created} seconds.`);
+
+  if (timeoutHours) {
+    const timeout = (Date.now() / 1000) - (60 * 60 * timeoutHours);
+    if (timeoutHours > 0 && session.created < timeout) {
+      throw new Unauthorized(`session expired since ${timeout - session.created} seconds.`);
+    } else if (timeoutHours < 0 && session.created >= timeout) {
+      throw new Unauthorized('session is too fresh.');
+    }
   }
+
   if (session.type !== type) {
     throw new Forbidden(`Wallet operation forbidden with session type ${session.type}.`);
   }
@@ -339,7 +344,7 @@ AccountManager.prototype.resetRequest = function resetRequest(email,
 
 AccountManager.prototype.setWallet = function setWallet(sessionReceipt, walletStr, proxyAddr) {
   // check session
-  const session = checkSession(sessionReceipt, this.sessionAddr, Type.CREATE_CONF);
+  const session = checkSession(sessionReceipt, this.sessionAddr, Type.CREATE_CONF, 2);
   // check data
   const wallet = checkWallet(walletStr);
   let account;
@@ -378,7 +383,7 @@ AccountManager.prototype.setWallet = function setWallet(sessionReceipt, walletSt
 
 AccountManager.prototype.resetWallet = function resetWallet(sessionReceipt, walletStr) {
   // check session
-  const session = checkSession(sessionReceipt, this.sessionAddr, Type.RESET_CONF);
+  const session = checkSession(sessionReceipt, this.sessionAddr, Type.RESET_CONF, 2);
   // check data
   const wallet = checkWallet(walletStr);
   // check existing wallet
@@ -401,11 +406,26 @@ AccountManager.prototype.resetWallet = function resetWallet(sessionReceipt, wall
 
 AccountManager.prototype.confirmEmail = function confirmEmail(sessionReceipt) {
   // check session
-  const session = checkSession(sessionReceipt, this.sessionAddr, Type.CREATE_CONF);
+  const session = checkSession(sessionReceipt, this.sessionAddr, Type.CREATE_CONF, 2);
   // handle email
   return this.db.getAccount(session.accountId).then((account) => {
     if (!account.email) {
       return this.db.updateEmailComplete(session.accountId, account.pendingEmail);
+    }
+
+    return true;
+  });
+};
+
+AccountManager.prototype.resendEmail = function resendEmail(sessionReceipt, origin) {
+  // check session
+  const session = checkSession(sessionReceipt, this.sessionAddr, Type.CREATE_CONF, -2);
+  // handle email
+
+  const receipt = new Receipt().createConf(session.accountId).sign(this.sessionPriv);
+  return this.db.getAccount(session.accountId).then((account) => {
+    if (!account.email) {
+      this.email.sendConfirm(account.pendingEmail, receipt, origin);
     }
 
     return true;
