@@ -1,0 +1,46 @@
+language: node_js
+
+env:
+  global:
+    - secure: 3cx8DG39I9ChfHCBiVfDxIVmoLeOt9zy0ooQkUajUaE5UXI9IkZw7cNaOaxkQVjO9u969hLJHjXdwY1Sk3SZdSWEnMNeW6d5FNyjnpKLliRNj31mOOcNYBxulLmfEPyleayRQgMbqi3OF0tV7CWj9vAaD9Iam6caqfivKPNu9vATuYprCdz2ZyKMgjWMZnGmFNx4D85/9gorKGYdIfcBTr3WtTW6U/7gUuypqZI8PpE/FOZm4uDJlRtL8d60h/7ahVrAcMAtplunrNrXzCGdSHdap5m/Nas0Kb03+xJ6VlkfPZKfsnAJ8X/73JJCkPL3uAwcim4lovrSS7LB+IBtDg==
+    - AWS_ROLE_ARN=arn:aws:iam::105751009136:role/lambda_api_dynamo
+    - AWS_REGION=eu-west-1
+    - AWS_FUNCTION_NAME=sb-account-service
+    - AWS_HANDLER=index.handler
+    - AWS_MEMORY_SIZE=256
+    - AWS_TIMEOUT=14
+    - AWS_RUNTIME=nodejs4.3
+
+node_js:
+  - "6.2.2"
+
+install:
+  - npm install -g node-lambda
+  - sudo apt-get install zip
+
+build:
+  ci:
+    - echo $BUILD_URL
+    - npm --version
+    - npm install
+    - npm test
+
+  on_success:
+    - npm run package
+    - if [ "$BRANCH" == "master" ]; then echo "Publishing to Production"; node-lambda deploy -a $AWS_ACCESS_KEY_ID -s $AWS_SECRET_ACCESS_KEY -o $AWS_ROLE_ARN -r $AWS_REGION -n $AWS_FUNCTION_NAME -H $AWS_HANDLER -m $AWS_MEMORY_SIZE -t $AWS_TIMEOUT -u $AWS_RUNTIME -z lambda.zip; fi
+    - if [ "$BRANCH" == "develop" ]; then echo "Deploying to Development"; node-lambda deploy -a $AWS_ACCESS_KEY_ID -s $AWS_SECRET_ACCESS_KEY -o $AWS_ROLE_ARN -r $AWS_REGION -n $AWS_FUNCTION_NAME -H $AWS_HANDLER -m $AWS_MEMORY_SIZE -t $AWS_TIMEOUT -u $AWS_RUNTIME -z lambda.zip; fi
+
+integrations:
+
+  notifications:
+    - integrationName: slack_chainfish
+      type: slack
+      recipients:
+        - "#ci"
+      branches:
+        only:
+          - master
+          - develop
+      on_success: change
+      on_failure: always
+      on_start: never

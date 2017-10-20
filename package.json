@@ -12,7 +12,7 @@
     "build:js": "babel index.js --out-dir dist && babel src --out-dir dist/src",
     "build:install": "cp package.json dist/ && cd dist && npm install --production",
     "package": "npm run build && npm run package:pack",
-    "package:pack": "cd dist && zip ../artifact.zip **/* && cd ..",
+    "package:pack": "cd dist && zip ../lambda.zip **/* && cd ..",
     "test": "mocha -r babel-register -r babel-polyfill *.test.js"
   },
   "license": "MIT",
